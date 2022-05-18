@@ -16,7 +16,7 @@ from . import utils
 
 
 def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=62, idle_time_const=100, num_loops_per_frame=128,
-                       num_tx_antennas=3):
+                       num_tx_antennas=2):
     """Calculate the doppler resolution for the given radar configuration.
 
     Args:

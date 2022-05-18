@@ -14,18 +14,20 @@ import numpy as np
 import mmwave.dsp as dsp
 import mmwave.clustering as clu
 from mmwave.dataloader import DCA1000
-from demo.Lab0008.lab0008_visualize import ellipse_visualize
+
 
 import matplotlib.pyplot as plt
+
+np.seterr(divide='ignore')
 
 plt.close('all')
 
 # QOL settings
 loadData = True
 
-numFrames = 300
+#numFrames = 300
 numADCSamples = 128
-numTxAntennas = 3
+numTxAntennas = 2
 numRxAntennas = 4
 numLoopsPerFrame = 128
 numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
@@ -37,8 +39,11 @@ numAngleBins = 64
 range_resolution, bandwidth = dsp.range_resolution(numADCSamples)
 doppler_resolution = dsp.doppler_resolution(bandwidth)
 
-plotRangeDopp = False  
-plot2DscatterXY = True  
+print("range resolution: " + str(range_resolution))
+print("doppler resoltion: " + str(doppler_resolution))
+
+plotRangeDopp = False
+plot2DscatterXY = True
 plot2DscatterXZ = False  
 plot3Dscatter = False  
 plotCustomPlt = False
@@ -77,7 +82,7 @@ if __name__ == '__main__':
         numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
 
         # (3) Doppler Processing 
-        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=3, clutter_removal_enabled=True)
+        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=True)
 
         # --- Show output
         if plotRangeDopp:
@@ -137,13 +142,13 @@ if __name__ == '__main__':
         azimuthInput = aoa_input[detObj2D['rangeIdx'], :, detObj2D['dopplerIdx']]
 
         x, y, z = dsp.naive_xyz(azimuthInput.T)
-        xyzVecN = np.zeros((3, x.shape[0]))
+        xyzVecN = np.ones((3, x.shape[0]))
         xyzVecN[0] = x * range_resolution * detObj2D['rangeIdx']
         xyzVecN[1] = y * range_resolution * detObj2D['rangeIdx']
         xyzVecN[2] = z * range_resolution * detObj2D['rangeIdx']
 
         Psi, Theta, Ranges, xyzVec = dsp.beamforming_naive_mixed_xyz(azimuthInput, detObj2D['rangeIdx'],
-                                                                     range_resolution, method='Capon')
+                                                                     range_resolution, method='Bartlett')
 
         # (5) 3D-Clustering
         # detObj2D must be fully populated and completely accurate right here
@@ -168,15 +173,16 @@ if __name__ == '__main__':
                 detObj2D_f[i][4] = xyzVec[1][i]
                 detObj2D_f[i][5] = xyzVec[2][i]
 
-                # radar_dbscan(__, epsilon, vfactor, weight)
-        #        cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=True)
-        cluster = clu.radar_dbscan(detObj2D_f, 0, doppler_resolution, use_elevation=True)
+                #radar_dbscan(__, epsilon, vfactor, weight)
+                #cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=False)
+        '''___________________
+        cluster = clu.radar_dbscan(detObj2D_f, 0, doppler_resolution, use_elevation=False)
 
         cluster_np = np.array(cluster['size']).flatten()
         if cluster_np.size != 0:
             if max(cluster_np) > max_size:
                 max_size = max(cluster_np)
-
+        ____________________'''
         # (6) Visualization
         if plot2DscatterXY or plot2DscatterXZ:
 
@@ -187,12 +193,12 @@ if __name__ == '__main__':
                 axes[0].set_ylabel('Range')
                 axes[0].set_xlim(left=-4, right=4)
                 axes[0].set_xlabel('Azimuth')
-                axes[0].grid(b=True)
+                axes[0].grid(visible=True)
 
                 axes[1].set_ylim(bottom=0, top=10)
                 axes[1].set_xlim(left=-4, right=4)
                 axes[1].set_xlabel('Azimuth')
-                axes[1].grid(b=True)
+                axes[1].grid(visible=True)
 
             elif plot2DscatterXZ:
                 axes[0].set_ylim(bottom=-5, top=5)

@@ -239,7 +239,7 @@ def aoa_capon(x, steering_vector, magnitude=False):
 
     Rxx = cov_matrix(x)
     Rxx = forward_backward_avg(Rxx)
-    Rxx_inv = np.linalg.inv(Rxx)
+    Rxx_inv = np.linalg.pinv(Rxx)
     # Calculate Covariance Matrix Rxx
     first = Rxx_inv @ steering_vector.T
     den = np.reciprocal(np.einsum('ij,ij->i', steering_vector.conj(), first.T))
@@ -828,7 +828,7 @@ def aoa_est_bf_multi_peak(gamma, sidelobe_level, width_adjust_3d_b, input_snr, e
     return num_max, np.array(est_var)
 
 
-def naive_xyz(virtual_ant, num_tx=3, num_rx=4, fft_size=64):
+def naive_xyz(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
     """ Estimate the phase introduced from the elevation of the elevation antennas
 
     Args:
@@ -843,7 +843,7 @@ def naive_xyz(virtual_ant, num_tx=3, num_rx=4, fft_size=64):
         z_vector (float): Estimated z axis coordinate in meters (m)
 
     """
-    assert num_tx > 2, "need a config for more than 2 TXs"
+    assert num_tx > 1, "need a config for more than 2 TXs"
     num_detected_obj = virtual_ant.shape[1]
 
     # Zero pad azimuth
@@ -863,29 +863,13 @@ def naive_xyz(virtual_ant, num_tx=3, num_rx=4, fft_size=64):
     wx = 2 * np.pi / fft_size * k_max  # shape = (num_detected_obj, )
     x_vector = wx / np.pi
 
-    # Zero pad elevation
-    elevation_ant = virtual_ant[2 * num_rx:, :]
-    elevation_ant_padded = np.zeros(shape=(fft_size, num_detected_obj), dtype=np.complex_)
-    # elevation_ant_padded[:len(elevation_ant)] = elevation_ant
-    elevation_ant_padded[:num_rx, :] = elevation_ant
+    y_vector = np.sqrt(1 - x_vector ** 2)
 
-    # Process elevation information
-    elevation_fft = np.fft.fft(elevation_ant, axis=0)
-    elevation_max = np.argmax(np.log2(np.abs(elevation_fft)), axis=0)  # shape = (num_detected_obj, )
-    peak_2 = np.zeros_like(elevation_max, dtype=np.complex_)
-    # peak_2 = elevation_fft[np.argmax(np.log2(np.abs(elevation_fft)))]
-    for i in range(len(elevation_max)):
-        peak_2[i] = elevation_fft[elevation_max[i], i]
-
-    # Calculate elevation phase shift
-    wz = np.angle(peak_1 * peak_2.conj() * np.exp(1j * 2 * wx))
-    z_vector = wz / np.pi
-    y_vector = np.sqrt(1 - x_vector ** 2 - z_vector ** 2)
-    return x_vector, y_vector, z_vector
+    return x_vector, y_vector
 
 
-def beamforming_naive_mixed_xyz(azimuth_input, input_ranges, range_resolution, method='Capon', num_vrx=12, est_range=90,
-                                est_resolution=1):
+def beamforming_naive_mixed_xy(azimuth_input, input_ranges, range_resolution, method='Bartlett', num_vrx=8, est_range=90,
+                                est_resolution=10):
     """ This function estimates the XYZ location of a series of input detections by performing beamforming on the
     azimuth axis and naive AOA on the vertical axis.
         
@@ -930,7 +914,6 @@ def beamforming_naive_mixed_xyz(azimuth_input, input_ranges, range_resolution, m
     doa_var_thr = 10
     num_vec, steering_vec = gen_steering_vec(est_range, est_resolution, 8)
 
-    output_e_angles = []
     output_a_angles = []
     output_ranges = []
 
@@ -953,12 +936,10 @@ def beamforming_naive_mixed_xyz(azimuth_input, input_ranges, range_resolution, m
 
         estimated_variance = variance_estimation(num_out, est_resolution, obj_dict, total_power)
 
-        higher_rung = inputSignal[8:12]
-        lower_rung = inputSignal[2:6]
+        lower_rung = inputSignal
         for j in range(num_out):
-            ele_out = aoa_estimation_bf_one_point(4, higher_rung, steering_vec[max_theta[j]])
-            azi_out = aoa_estimation_bf_one_point(4, lower_rung, steering_vec[max_theta[j]])
-            num = azi_out * np.conj(ele_out)
+            azi_out = aoa_estimation_bf_one_point(8, lower_rung, steering_vec[max_theta[j]])
+            num = azi_out
             wz = np.arctan2(num.imag, num.real) / np.pi
 
             temp_angle = -est_range + max_theta[
@@ -967,7 +948,6 @@ def beamforming_naive_mixed_xyz(azimuth_input, input_ranges, range_resolution, m
             if np.abs(temp_angle) <= est_range and estimated_variance[j] < doa_var_thr:
                 e_angle = np.arcsin(wz)
                 a_angle = -1 * (np.pi / 180) * temp_angle  # Degrees to radians
-                output_e_angles.append((180 / np.pi) * e_angle)  # Convert radians to degrees
 
                 # print(e_angle)
                 # if (np.sin(a_angle)/np.cos(e_angle)) > 1 or (np.sin(a_angle)/np.cos(e_angle)) < -1:
@@ -988,16 +968,14 @@ def beamforming_naive_mixed_xyz(azimuth_input, input_ranges, range_resolution, m
 
                 output_ranges.append(input_ranges[i])
 
-    phi = np.array(output_e_angles)
     theta = np.array(output_a_angles)
     ranges = np.array(output_ranges)
 
     # points could be calculated by trigonometry,
     x = np.sin(np.pi / 180 * theta) * ranges * range_resolution     # x = np.sin(azi) * range
     y = np.cos(np.pi / 180 * theta) * ranges * range_resolution     # y = np.cos(azi) * range
-    z = np.tan(np.pi / 180 * phi) * ranges * range_resolution       # z = np.tan(ele) * range
 
-    xyz_vec = np.array([x, y, z])
+    xy_vec = np.array([x, y])
 
     # return phi, theta, ranges
-    return phi, theta, ranges, xyz_vec
+    return theta, ranges, xy_vec

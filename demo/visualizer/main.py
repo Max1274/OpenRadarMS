@@ -25,9 +25,9 @@ plt.close('all')
 # QOL settings
 loadData = True
 
-numFrames = 300
+numFrames = 200
 numADCSamples = 128
-numTxAntennas = 3
+numTxAntennas = 2
 numRxAntennas = 4
 numLoopsPerFrame = 128
 numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
@@ -39,8 +39,8 @@ numAngleBins = 64
 range_resolution, bandwidth = dsp.range_resolution(numADCSamples)
 doppler_resolution = dsp.doppler_resolution(bandwidth)
 
-plotRangeDopp = True  
-plot2DscatterXY = False  
+plotRangeDopp = False
+plot2DscatterXY = True
 plot2DscatterXZ = False  
 plot3Dscatter = False  
 plotCustomPlt = False
@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     # (1) Reading in adc data
     if loadData:
-        adc_data = np.fromfile('./data/1_person_walking_128loops.bin', dtype=np.uint16)
+        adc_data = np.fromfile('C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\dump4 - laufen\\adc_data.bin', dtype=np.uint16)
         adc_data = adc_data.reshape(numFrames, -1)
         adc_data = np.apply_along_axis(DCA1000.organize, 1, adc_data, num_chirps=numChirpsPerFrame,
                                        num_rx=numRxAntennas, num_samples=numADCSamples)
@@ -111,7 +111,7 @@ if __name__ == '__main__':
         numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
 
         # (3) Doppler Processing 
-        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=3, clutter_removal_enabled=True, window_type_2d=Window.HAMMING)
+        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=True, window_type_2d=Window.HAMMING)
 
         # --- Show output
         if plotRangeDopp:
@@ -173,13 +173,12 @@ if __name__ == '__main__':
 
         azimuthInput = aoa_input[detObj2D['rangeIdx'], :, detObj2D['dopplerIdx']]
 
-        x, y, z = dsp.naive_xyz(azimuthInput.T)
-        xyzVecN = np.zeros((3, x.shape[0]))
-        xyzVecN[0] = x * range_resolution * detObj2D['rangeIdx']
-        xyzVecN[1] = y * range_resolution * detObj2D['rangeIdx']
-        xyzVecN[2] = z * range_resolution * detObj2D['rangeIdx']
+        x, y = dsp.naive_xyz(azimuthInput.T)
+        xyVecN = np.zeros((2, x.shape[0]))
+        xyVecN[0] = x * range_resolution * detObj2D['rangeIdx']
+        xyVecN[1] = y * range_resolution * detObj2D['rangeIdx']
 
-        Psi, Theta, Ranges, xyzVec = dsp.beamforming_naive_mixed_xyz(azimuthInput, detObj2D['rangeIdx'],
+        Theta, Ranges, xyVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detObj2D['rangeIdx'],
                                                                      range_resolution, method='Bartlett')
 
         # (5) 3D-Clustering
@@ -188,7 +187,7 @@ if __name__ == '__main__':
         dtf = np.dtype({'names': ['rangeIdx', 'dopplerIdx', 'peakVal', 'location', 'SNR'],
                         'formats': ['<f4', '<f4', '<f4', dtype_location, '<f4']})
         detObj2D_f = detObj2D.astype(dtf)
-        detObj2D_f = detObj2D_f.view(np.float32).reshape(-1, 7)
+        detObj2D_f = detObj2D_f.view(np.float32).reshape(-1, 6)
 
         # Fully populate detObj2D_f with correct info
         for i, currRange in enumerate(Ranges):
@@ -196,19 +195,17 @@ if __name__ == '__main__':
                 # copy last row
                 detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
             if currRange == detObj2D_f[i][0]:
-                detObj2D_f[i][3] = xyzVec[0][i]
-                detObj2D_f[i][4] = xyzVec[1][i]
-                detObj2D_f[i][5] = xyzVec[2][i]
+                detObj2D_f[i][3] = xyVec[0][i]
+                detObj2D_f[i][4] = xyVec[1][i]
             else:  # Copy then populate
                 detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
-                detObj2D_f[i][3] = xyzVec[0][i]
-                detObj2D_f[i][4] = xyzVec[1][i]
-                detObj2D_f[i][5] = xyzVec[2][i]
+                detObj2D_f[i][3] = xyVec[0][i]
+                detObj2D_f[i][4] = xyVec[1][i]
 
                 # radar_dbscan(epsilon, vfactor, weight, numPoints)
         #        cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=True)
         if len(detObj2D_f) > 0:
-            cluster = clu.radar_dbscan(detObj2D_f, 0, doppler_resolution, use_elevation=True)
+            cluster = clu.radar_dbscan(detObj2D_f, 0, doppler_resolution, use_elevation=False)
 
             cluster_np = np.array(cluster['size']).flatten()
             if cluster_np.size != 0:
@@ -221,18 +218,17 @@ if __name__ == '__main__':
         if plot2DscatterXY or plot2DscatterXZ:
 
             if plot2DscatterXY:
-                xyzVec = xyzVec[:, (np.abs(xyzVec[2]) < 1.5)]
-                xyzVecN = xyzVecN[:, (np.abs(xyzVecN[2]) < 1.5)]
+
                 axes[0].set_ylim(bottom=0, top=10)
                 axes[0].set_ylabel('Range')
                 axes[0].set_xlim(left=-4, right=4)
                 axes[0].set_xlabel('Azimuth')
-                axes[0].grid(b=True)
+                axes[0].grid(visible=True)
 
                 axes[1].set_ylim(bottom=0, top=10)
                 axes[1].set_xlim(left=-4, right=4)
                 axes[1].set_xlabel('Azimuth')
-                axes[1].grid(b=True)
+                axes[1].grid(visible=True)
 
             elif plot2DscatterXZ:
                 axes[0].set_ylim(bottom=-5, top=5)
@@ -247,20 +243,20 @@ if __name__ == '__main__':
                 axes[1].grid(b=True)
 
             if plotMakeMovie and plot2DscatterXY:
-                ims.append((axes[0].scatter(xyzVec[0], xyzVec[1], c='r', marker='o', s=2),
-                            axes[1].scatter(xyzVecN[0], xyzVecN[1], c='b', marker='o', s=2)))
+                ims.append((axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=2),
+                            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=2)))
             elif plotMakeMovie and plot2DscatterXZ:
-                ims.append((axes[0].scatter(xyzVec[0], xyzVec[2], c='r', marker='o', s=2),
-                            axes[1].scatter(xyzVecN[0], xyzVecN[2], c='b', marker='o', s=2)))
+                ims.append((axes[0].scatter(xyVec[0], xyVec[2], c='r', marker='o', s=2),
+                            axes[1].scatter(xyVecN[0], xyVecN[2], c='b', marker='o', s=2)))
             elif plot2DscatterXY:
-                axes[0].scatter(xyzVec[0], xyzVec[1], c='r', marker='o', s=3)
-                axes[1].scatter(xyzVecN[0], xyzVecN[1], c='b', marker='o', s=3)
+                axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=3)
+                axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
                 plt.pause(0.1)
                 axes[0].clear()
                 axes[1].clear()
             elif plot2DscatterXZ:
-                axes[0].scatter(xyzVec[0], xyzVec[2], c='r', marker='o', s=3)
-                axes[1].scatter(xyzVecN[0], xyzVecN[2], c='b', marker='o', s=3)
+                axes[0].scatter(xyVec[0], xyVec[2], c='r', marker='o', s=3)
+                axes[1].scatter(xyVecN[0], xyVecN[2], c='b', marker='o', s=3)
                 plt.pause(0.1)
                 axes[0].clear()
                 axes[1].clear()
