@@ -828,7 +828,7 @@ def aoa_est_bf_multi_peak(gamma, sidelobe_level, width_adjust_3d_b, input_snr, e
     return num_max, np.array(est_var)
 
 
-def naive_xyz(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
+def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
     """ Estimate the phase introduced from the elevation of the elevation antennas
 
     Args:
@@ -869,7 +869,7 @@ def naive_xyz(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
 
 
 def beamforming_naive_mixed_xy(azimuth_input, input_ranges, range_resolution, method='Bartlett', num_vrx=8, est_range=90,
-                                est_resolution=10):
+                                est_resolution=1):
     """ This function estimates the XYZ location of a series of input detections by performing beamforming on the
     azimuth axis and naive AOA on the vertical axis.
         

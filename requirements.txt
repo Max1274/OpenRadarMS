@@ -1,8 +1,11 @@
-setuptools
-numpy
+setuptools~=62.2.0
+numpy~=1.22.3
 pandas
-scipy
-matplotlib
-pyserial
+scipy~=1.8.0
+matplotlib~=3.5.2
+pyserial~=3.5
 scikit_learn
-opencv-python
+opencv-python~=4.5.5.64
+ffmpeg~=1.4
+sklearn~=0.0
+scikit-learn~=1.1.0

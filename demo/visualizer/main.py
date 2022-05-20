@@ -20,13 +20,15 @@ from demo.visualizer.visualize import ellipse_visualize
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+plt.rcParams['animation.ffmpeg_path'] = 'C:\\FFmpeg\\ffmpeg-2022-05-16-git-e3580f6077-full_build\\bin\\ffmpeg.exe'
+
 plt.close('all')
 
 # QOL settings
 loadData = True
 
-numFrames = 200
-numADCSamples = 128
+numFrames = 400
+numADCSamples = 1024
 numTxAntennas = 2
 numRxAntennas = 4
 numLoopsPerFrame = 128
@@ -36,20 +38,23 @@ numRangeBins = numADCSamples
 numDopplerBins = numLoopsPerFrame
 numAngleBins = 64
 
-range_resolution, bandwidth = dsp.range_resolution(numADCSamples)
-doppler_resolution = dsp.doppler_resolution(bandwidth)
+'''
+range_resolution = 0.209
+doppler_resolution = 0.12
+bandwidth = 716290000
+'''
+
+range_resolution, bandwidth, max_range = dsp.range_resolution(numADCSamples)
+doppler_resolution, max_doppler = dsp.doppler_resolution(bandwidth)
 
 plotRangeDopp = False
-plot2DscatterXY = True
-plot2DscatterXZ = False  
-plot3Dscatter = False  
+plot2DscatterXY = False
+plotXYdoppler = True
 plotCustomPlt = False
 
 plotMakeMovie = False
-makeMovieTitle = " "
-makeMovieDirectory = "./test_plot3Dscatter.mp4"
 
-visTrigger = plot2DscatterXY + plot2DscatterXZ + plot3Dscatter + plotRangeDopp + plotCustomPlt
+visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt
 assert visTrigger < 2, "Can only choose to plot one type of plot at once"
 
 singFrameView = False
@@ -59,7 +64,7 @@ def movieMaker(fig, ims, title, save_dir):
 
     # Set up formatting for the Range Azimuth heatmap movies
     Writer = animation.writers['ffmpeg']
-    writer = Writer(fps=10, metadata=dict(artist='Me'), bitrate=1800)
+    writer = Writer(fps=10, metadata=dict(artist='Me'), bitrate=30)
 
     plt.title(title)
     print('Done')
@@ -75,20 +80,16 @@ if __name__ == '__main__':
 
     # (1) Reading in adc data
     if loadData:
-        adc_data = np.fromfile('C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\dump4 - laufen\\adc_data.bin', dtype=np.uint16)
+        adc_data = np.fromfile('C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\_highqualitydump\\adc_data_0.bin', dtype=np.uint16)
+        adc_data = np.append(adc_data, np.fromfile('C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\_highqualitydump\\adc_data_1.bin', dtype=np.uint16))
         adc_data = adc_data.reshape(numFrames, -1)
         adc_data = np.apply_along_axis(DCA1000.organize, 1, adc_data, num_chirps=numChirpsPerFrame,
                                        num_rx=numRxAntennas, num_samples=numADCSamples)
         print("Data Loaded!")
 
     # (1.5) Required Plot Declarations
-    if plot2DscatterXY or plot2DscatterXZ:
+    if plot2DscatterXY:
         fig, axes = plt.subplots(1, 2)
-    elif plot3Dscatter and plotMakeMovie:
-        fig = plt.figure()
-        nice = Axes3D(fig)
-    elif plot3Dscatter:
-        fig = plt.figure()
     elif plotRangeDopp:
         fig = plt.figure()
     elif plotCustomPlt:
@@ -97,9 +98,16 @@ if __name__ == '__main__':
     # (1.6) Optional single frame view
     if singFrameView:
         dataCube = np.zeros((1, numChirpsPerFrame, 4, 128), dtype=complex)
-        dataCube[0, :, :, :] = adc_data[299]
+        dataCube[0, :, :, :] = adc_data[numFrames-1]
     else:
         dataCube = adc_data
+
+    # Optional MovieWriter - MS
+    if plotMakeMovie:
+        import matplotlib.animation as manimation
+        FFMpegWriter = manimation.writers['ffmpeg']
+        metadata = dict(title='movietest', artist='MS')
+        writer = FFMpegWriter(fps=3, metadata=metadata)
 
     for i, frame in enumerate(dataCube):
 #        print(i,end=',') # Frame tracker
@@ -111,15 +119,17 @@ if __name__ == '__main__':
         numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
 
         # (3) Doppler Processing 
-        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=True, window_type_2d=Window.HAMMING)
+        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=False, window_type_2d=Window.HAMMING)
 
         # --- Show output
         if plotRangeDopp:
             det_matrix_vis = np.fft.fftshift(det_matrix, axes=1)
             if plotMakeMovie:
-                ims.append((plt.imshow(det_matrix_vis / det_matrix_vis.max()),))
+                ims.append((plt.imshow(det_matrix_vis / det_matrix_vis.max())))
             else:
-                plt.imshow(det_matrix_vis / det_matrix_vis.max())
+                plt.imshow(det_matrix_vis / 250, aspect='auto', \
+                           extent=[-max_doppler, max_doppler, \
+                                   max_range, 0])
                 plt.title("Range-Doppler plot " + str(i))
                 plt.pause(0.05)
                 plt.clf()
@@ -132,14 +142,14 @@ if __name__ == '__main__':
                                                                   arr=fft2d_sum.T,
                                                                   l_bound=1.5,
                                                                   guard_len=4,
-                                                                  noise_len=16)
+                                                                  noise_len=8)
 
         thresholdRange, noiseFloorRange = np.apply_along_axis(func1d=dsp.ca_,
                                                               axis=0,
                                                               arr=fft2d_sum,
                                                               l_bound=2.5,
                                                               guard_len=4,
-                                                              noise_len=16)
+                                                              noise_len=8)
 
         thresholdDoppler, noiseFloorDoppler = thresholdDoppler.T, noiseFloorDoppler.T
         det_doppler_mask = (det_matrix > thresholdDoppler)
@@ -168,12 +178,18 @@ if __name__ == '__main__':
         # --- Peak Grouping
         detObj2D = dsp.peak_grouping_along_doppler(detObj2DRaw, det_matrix, numDopplerBins)
         SNRThresholds2 = np.array([[2, 23], [10, 11.5], [35, 16.0]])
-        peakValThresholds2 = np.array([[4, 275], [1, 400], [500, 0]])
+        peakValThresholds2 = np.array([[0, 275], [1, 400], [500, 0]])
+        #SNRThresholds2 = np.array([[2, 10], [5, 8], [10, 8]])
+        #peakValThresholds2 = np.array([[1, 100], [0.5, 100], [100, 0]])
+
         detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5, range_resolution)
 
         azimuthInput = aoa_input[detObj2D['rangeIdx'], :, detObj2D['dopplerIdx']]
 
-        x, y = dsp.naive_xyz(azimuthInput.T)
+        # ________________ TESTING OF OTHER AZIMUTH PROCESSING FUNCTION _______________________
+        #detObj2Dxy = dsp.azimuth_processing(radar_cube, detObj2D)
+
+        x, y = dsp.naive_xy(azimuthInput.T)
         xyVecN = np.zeros((2, x.shape[0]))
         xyVecN[0] = x * range_resolution * detObj2D['rangeIdx']
         xyVecN[1] = y * range_resolution * detObj2D['rangeIdx']
@@ -190,17 +206,17 @@ if __name__ == '__main__':
         detObj2D_f = detObj2D_f.view(np.float32).reshape(-1, 6)
 
         # Fully populate detObj2D_f with correct info
-        for i, currRange in enumerate(Ranges):
-            if i >= (detObj2D_f.shape[0]):
+        for j, currRange in enumerate(Ranges):
+            if j >= (detObj2D_f.shape[0]):
                 # copy last row
-                detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
-            if currRange == detObj2D_f[i][0]:
-                detObj2D_f[i][3] = xyVec[0][i]
-                detObj2D_f[i][4] = xyVec[1][i]
+                detObj2D_f = np.insert(detObj2D_f, j, detObj2D_f[j - 1], axis=0)
+            if currRange == detObj2D_f[j][0]:
+                detObj2D_f[j][3] = xyVec[0][j]
+                detObj2D_f[j][4] = xyVec[1][j]
             else:  # Copy then populate
-                detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
-                detObj2D_f[i][3] = xyVec[0][i]
-                detObj2D_f[i][4] = xyVec[1][i]
+                detObj2D_f = np.insert(detObj2D_f, j, detObj2D_f[j - 1], axis=0)
+                detObj2D_f[j][3] = xyVec[0][j]
+                detObj2D_f[j][4] = xyVec[1][j]
 
                 # radar_dbscan(epsilon, vfactor, weight, numPoints)
         #        cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=True)
@@ -215,70 +231,31 @@ if __name__ == '__main__':
         # (6) Visualization
         if plotRangeDopp:
             continue
-        if plot2DscatterXY or plot2DscatterXZ:
+        if plot2DscatterXY:
 
-            if plot2DscatterXY:
+            plt.title("XY scatter " + str(i))
 
-                axes[0].set_ylim(bottom=0, top=10)
-                axes[0].set_ylabel('Range')
-                axes[0].set_xlim(left=-4, right=4)
-                axes[0].set_xlabel('Azimuth')
-                axes[0].grid(visible=True)
+            axes[0].set_ylim(bottom=0, top=10)
+            axes[0].set_ylabel('Range')
+            axes[0].set_xlim(left=-4, right=4)
+            axes[0].set_xlabel('Azimuth')
+            axes[0].grid(visible=True)
 
-                axes[1].set_ylim(bottom=0, top=10)
-                axes[1].set_xlim(left=-4, right=4)
-                axes[1].set_xlabel('Azimuth')
-                axes[1].grid(visible=True)
+            axes[1].set_ylim(bottom=0, top=10)
+            axes[1].set_xlim(left=-4, right=4)
+            axes[1].set_xlabel('Azimuth')
+            axes[1].grid(visible=True)
 
-            elif plot2DscatterXZ:
-                axes[0].set_ylim(bottom=-5, top=5)
-                axes[0].set_ylabel('Elevation')
-                axes[0].set_xlim(left=-4, right=4)
-                axes[0].set_xlabel('Azimuth')
-                axes[0].grid(b=True)
 
-                axes[1].set_ylim(bottom=-5, top=5)
-                axes[1].set_xlim(left=-4, right=4)
-                axes[1].set_xlabel('Azimuth')
-                axes[1].grid(b=True)
+            axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=3)
+            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
+            plt.pause(0.01)
+            axes[0].clear()
+            axes[1].clear()
 
-            if plotMakeMovie and plot2DscatterXY:
-                ims.append((axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=2),
-                            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=2)))
-            elif plotMakeMovie and plot2DscatterXZ:
-                ims.append((axes[0].scatter(xyVec[0], xyVec[2], c='r', marker='o', s=2),
-                            axes[1].scatter(xyVecN[0], xyVecN[2], c='b', marker='o', s=2)))
-            elif plot2DscatterXY:
-                axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=3)
-                axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
-                plt.pause(0.1)
-                axes[0].clear()
-                axes[1].clear()
-            elif plot2DscatterXZ:
-                axes[0].scatter(xyVec[0], xyVec[2], c='r', marker='o', s=3)
-                axes[1].scatter(xyVecN[0], xyVecN[2], c='b', marker='o', s=3)
-                plt.pause(0.1)
-                axes[0].clear()
-                axes[1].clear()
-        elif plot3Dscatter and plotMakeMovie:
-            nice.set_zlim3d(bottom=-5, top=5)
-            nice.set_ylim(bottom=0, top=10)
-            nice.set_xlim(left=-4, right=4)
-            nice.set_xlabel('X Label')
-            nice.set_ylabel('Y Label')
-            nice.set_zlabel('Z Label')
-
-            ims.append((nice.scatter(xyzVec[0], xyzVec[1], xyzVec[2], c='r', marker='o', s=2),))
-
-        # elif plot3Dscatter:
-        #     if singFrameView:
-        #         ellipse_visualize(fig, cluster, detObj2D_f[:, 3:6])
-        #     else:
-        #         ellipse_visualize(fig, cluster, detObj2D_f[:, 3:6])
-        #         plt.pause(0.1)
-        #         plt.clf()
         else:
             sys.exit("Unknown plot options.")
 
     if visTrigger and plotMakeMovie:
-        movieMaker(fig, ims, makeMovieTitle, makeMovieDirectory)
+        #movieMaker(fig, ims, makeMovieTitle, makeMovieDirectory)
+        pass

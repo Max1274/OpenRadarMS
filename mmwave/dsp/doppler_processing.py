@@ -15,7 +15,7 @@ from . import compensation
 from . import utils
 
 
-def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=62, idle_time_const=100, num_loops_per_frame=128,
+def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=126.8, idle_time_const=5, num_loops_per_frame=128,
                        num_tx_antennas=2):
     """Calculate the doppler resolution for the given radar configuration.
 
@@ -38,8 +38,9 @@ def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=62, idle_t
     chirp_interval = (ramp_end_time + idle_time_const) * 1e-6
     doppler_resolution = light_speed_meter_per_sec / (
                 2 * num_loops_per_frame * num_tx_antennas * center_frequency * chirp_interval)
+    max_doppler = light_speed_meter_per_sec/(4*ramp_end_time*center_frequency)*1e6
 
-    return doppler_resolution
+    return doppler_resolution, max_doppler
 
 
 def separate_tx(signal, num_tx, vx_axis=1, axis=0):

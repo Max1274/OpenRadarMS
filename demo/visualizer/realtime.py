@@ -15,7 +15,6 @@ import mmwave.dsp as dsp
 import mmwave.clustering as clu
 from mmwave.dataloader import DCA1000
 
-
 import matplotlib.pyplot as plt
 
 np.seterr(divide='ignore')
@@ -25,30 +24,33 @@ plt.close('all')
 # QOL settings
 loadData = True
 
-#numFrames = 300
-numADCSamples = 128
+# numFrames = 300
+numADCSamplesOriginal = 256
+numADCSampleMultiplier = 1
+numADCSamples = numADCSamplesOriginal * numADCSampleMultiplier
+
 numTxAntennas = 2
 numRxAntennas = 4
-numLoopsPerFrame = 128
+numLoopsPerFrame = 64
 numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
 
 numRangeBins = numADCSamples
 numDopplerBins = numLoopsPerFrame
 numAngleBins = 64
 
-range_resolution, bandwidth = dsp.range_resolution(numADCSamples)
-doppler_resolution = dsp.doppler_resolution(bandwidth)
+range_resolution, bandwidth, max_range = dsp.range_resolution(numADCSamples)
+doppler_resolution, max_doppler = dsp.doppler_resolution(bandwidth)
 
 print("range resolution: " + str(range_resolution))
 print("doppler resoltion: " + str(doppler_resolution))
+print("max range: " + str(max_range))
+print("max doppler: " + str(max_doppler))
 
-plotRangeDopp = False
-plot2DscatterXY = True
-plot2DscatterXZ = False  
-plot3Dscatter = False  
+plotRangeDopp = True
+plot2DscatterXY = False
 plotCustomPlt = False
 
-visTrigger = plot2DscatterXY + plot2DscatterXZ + plot3Dscatter + plotRangeDopp + plotCustomPlt
+visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt
 assert visTrigger < 2, "Can only choose to plot one type of plot at once"
 
 singFrameView = False
@@ -57,39 +59,44 @@ if __name__ == '__main__':
     ims = []
     max_size = 0
     dca = DCA1000()
-    
+
     # (1.5) Required Plot Declarations
-    if plot2DscatterXY or plot2DscatterXZ:
+    if plot2DscatterXY:
         fig, axes = plt.subplots(1, 2)
-    elif plot3Dscatter:
-        fig = plt.figure()
     elif plotRangeDopp:
         fig = plt.figure()
     elif plotCustomPlt:
         print("Using Custom Plotting")
 
-
+    frameCounter = 0
 
     while True:
         # (1) Reading in adc data
         adc_data = dca.read()
+        for i in range(numADCSampleMultiplier-1):
+            adc_data = np.append(adc_data, dca.read())
         frame = dca.organize(adc_data, num_chirps=numChirpsPerFrame, num_rx=numRxAntennas, num_samples=numADCSamples)
+        frameCounter +=1
 
         # (2) Range Processing
         from mmwave.dsp.utils import Window
+
         radar_cube = dsp.range_processing(frame, window_type_1d=Window.BLACKMAN)
         assert radar_cube.shape == (
-        numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
+            numChirpsPerFrame, numRxAntennas, numADCSamples), "[ERROR] Radar cube is not the correct shape!"
 
         # (3) Doppler Processing 
-        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=True)
+        det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=False)
 
         # --- Show output
         if plotRangeDopp:
             det_matrix_vis = np.fft.fftshift(det_matrix, axes=1)
-            plt.imshow(det_matrix_vis / det_matrix_vis.max())
+            plt.imshow(det_matrix_vis / 250, aspect='auto', \
+                       extent=[-max_doppler, max_doppler, \
+                               0, max_range])
             plt.pause(0.05)
             plt.clf()
+            plt.title("Live Range-Doppler-Map frame: " + str(frameCounter))
 
         # (4) Object Detection
         # --- CFAR, SNR is calculated as well.
@@ -134,21 +141,22 @@ if __name__ == '__main__':
 
         # --- Peak Grouping
         detObj2D = dsp.peak_grouping_along_doppler(detObj2DRaw, det_matrix, numDopplerBins)
+        SNRThresholds2 = np.array([[2, 10], [5, 8], [10, 8]])
+        peakValThresholds2 = np.array([[1, 100], [0.5, 100], [100, 0]])
         SNRThresholds2 = np.array([[2, 23], [10, 11.5], [35, 16.0]])
-        peakValThresholds2 = np.array([[4, 275], [1, 400], [500, 0]])
-        detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5, range_resolution)
-
+        peakValThresholds2 = np.array([[0, 275], [1, 400], [500, 0]])
+        detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
+                                           range_resolution)
 
         azimuthInput = aoa_input[detObj2D['rangeIdx'], :, detObj2D['dopplerIdx']]
 
-        x, y, z = dsp.naive_xyz(azimuthInput.T)
-        xyzVecN = np.ones((3, x.shape[0]))
-        xyzVecN[0] = x * range_resolution * detObj2D['rangeIdx']
-        xyzVecN[1] = y * range_resolution * detObj2D['rangeIdx']
-        xyzVecN[2] = z * range_resolution * detObj2D['rangeIdx']
+        x, y = dsp.naive_xy(azimuthInput.T)
+        xyVecN = np.ones((2, x.shape[0]))
+        xyVecN[0] = x * range_resolution * detObj2D['rangeIdx']
+        xyVecN[1] = y * range_resolution * detObj2D['rangeIdx']
 
-        Psi, Theta, Ranges, xyzVec = dsp.beamforming_naive_mixed_xyz(azimuthInput, detObj2D['rangeIdx'],
-                                                                     range_resolution, method='Bartlett')
+        Theta, Ranges, xyVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detObj2D['rangeIdx'],
+                                                              range_resolution, method='Bartlett')
 
         # (5) 3D-Clustering
         # detObj2D must be fully populated and completely accurate right here
@@ -156,7 +164,7 @@ if __name__ == '__main__':
         dtf = np.dtype({'names': ['rangeIdx', 'dopplerIdx', 'peakVal', 'location', 'SNR'],
                         'formats': ['<f4', '<f4', '<f4', dtype_location, '<f4']})
         detObj2D_f = detObj2D.astype(dtf)
-        detObj2D_f = detObj2D_f.view(np.float32).reshape(-1, 7)
+        detObj2D_f = detObj2D_f.view(np.float32).reshape(-1, 6)
 
         # Fully populate detObj2D_f with correct info
         for i, currRange in enumerate(Ranges):
@@ -164,17 +172,15 @@ if __name__ == '__main__':
                 # copy last row
                 detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
             if currRange == detObj2D_f[i][0]:
-                detObj2D_f[i][3] = xyzVec[0][i]
-                detObj2D_f[i][4] = xyzVec[1][i]
-                detObj2D_f[i][5] = xyzVec[2][i]
+                detObj2D_f[i][3] = xyVec[0][i]
+                detObj2D_f[i][4] = xyVec[1][i]
             else:  # Copy then populate
                 detObj2D_f = np.insert(detObj2D_f, i, detObj2D_f[i - 1], axis=0)
-                detObj2D_f[i][3] = xyzVec[0][i]
-                detObj2D_f[i][4] = xyzVec[1][i]
-                detObj2D_f[i][5] = xyzVec[2][i]
+                detObj2D_f[i][3] = xyVec[0][i]
+                detObj2D_f[i][4] = xyVec[1][i]
 
-                #radar_dbscan(__, epsilon, vfactor, weight)
-                #cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=False)
+                # radar_dbscan(__, epsilon, vfactor, weight)
+                # cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=False)
         '''___________________
         cluster = clu.radar_dbscan(detObj2D_f, 0, doppler_resolution, use_elevation=False)
 
@@ -184,52 +190,27 @@ if __name__ == '__main__':
                 max_size = max(cluster_np)
         ____________________'''
         # (6) Visualization
-        if plot2DscatterXY or plot2DscatterXZ:
+        if plotRangeDopp:
+            continue
+        elif plot2DscatterXY:
 
-            if plot2DscatterXY:
-                xyzVec = xyzVec[:, (np.abs(xyzVec[2]) < 1.5)]
-                xyzVecN = xyzVecN[:, (np.abs(xyzVecN[2]) < 1.5)]
-                axes[0].set_ylim(bottom=0, top=10)
-                axes[0].set_ylabel('Range')
-                axes[0].set_xlim(left=-4, right=4)
-                axes[0].set_xlabel('Azimuth')
-                axes[0].grid(visible=True)
+            plt.title("Live XY scatter frame: " + str(frameCounter))
 
-                axes[1].set_ylim(bottom=0, top=10)
-                axes[1].set_xlim(left=-4, right=4)
-                axes[1].set_xlabel('Azimuth')
-                axes[1].grid(visible=True)
+            # xyVec = xyVec[:, (np.abs(xyVec[1]) < 1.5)]
+            # xyVecN = xyVecN[:, (np.abs(xyVecN[2]) < 1.5)]
+            axes[0].set_ylim(bottom=0, top=10)
+            axes[0].set_ylabel('Range')
+            axes[0].set_xlim(left=-4, right=4)
+            axes[0].set_xlabel('Azimuth')
+            axes[0].grid(visible=True)
 
-            elif plot2DscatterXZ:
-                axes[0].set_ylim(bottom=-5, top=5)
-                axes[0].set_ylabel('Elevation')
-                axes[0].set_xlim(left=-4, right=4)
-                axes[0].set_xlabel('Azimuth')
-                axes[0].grid(b=True)
+            axes[1].set_ylim(bottom=0, top=10)
+            axes[1].set_xlim(left=-4, right=4)
+            axes[1].set_xlabel('Azimuth')
+            axes[1].grid(visible=True)
 
-                axes[1].set_ylim(bottom=-5, top=5)
-                axes[1].set_xlim(left=-4, right=4)
-                axes[1].set_xlabel('Azimuth')
-                axes[1].grid(b=True)
-
-            if plot2DscatterXY:
-                axes[0].scatter(xyzVec[0], xyzVec[1], c='r', marker='o', s=3)
-                axes[1].scatter(xyzVecN[0], xyzVecN[1], c='b', marker='o', s=3)
-                plt.pause(0.1)
-                axes[0].clear()
-                axes[1].clear()
-            elif plot2DscatterXZ:
-                axes[0].scatter(xyzVec[0], xyzVec[2], c='r', marker='o', s=3)
-                axes[1].scatter(xyzVecN[0], xyzVecN[2], c='b', marker='o', s=3)
-                plt.pause(0.1)
-                axes[0].clear()
-                axes[1].clear()
-
-
-        elif plot3Dscatter:
-            if singFrameView:
-                ellipse_visualize(fig, cluster, detObj2D_f[:, 3:6])
-            else:
-                ellipse_visualize(fig, cluster, detObj2D_f[:, 3:6])
-                plt.pause(0.1)
-                plt.clf()
+            axes[0].scatter(xyVec[0]*range_resolution, xyVec[1], c='r', marker='o', s=3)
+            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
+            plt.pause(0.1)
+            axes[0].clear()
+            axes[1].clear()
