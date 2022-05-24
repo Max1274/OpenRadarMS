@@ -15,6 +15,7 @@ from .utils import *
 from . import compensation
 from scipy.signal import find_peaks
 import warnings
+import math
 
 def azimuth_processing(radar_cube, det_obj_2d, config, window_type_2d=None):
     """Calculate the X/Y coordinates for all detected objects.
@@ -829,7 +830,7 @@ def aoa_est_bf_multi_peak(gamma, sidelobe_level, width_adjust_3d_b, input_snr, e
 
 
 def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
-    """ Estimate the phase introduced from the elevation of the elevation antennas
+    """ Estimate the phase introduced from the azimuth of the azimuth antennas
 
     Args:
         virtual_ant: Signal received by the rx antennas, shape = [#angleBins, #detectedObjs], zero-pad #virtualAnts to #angleBins
@@ -840,7 +841,6 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
     Returns:
         x_vector (float): Estimated x axis coordinate in meters (m)
         y_vector (float): Estimated y axis coordinate in meters (m)
-        z_vector (float): Estimated z axis coordinate in meters (m)
 
     """
     assert num_tx > 1, "need a config for more than 2 TXs"
@@ -861,9 +861,9 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
 
     k_max[k_max > (fft_size // 2) - 1] = k_max[k_max > (fft_size // 2) - 1] - fft_size
     wx = 2 * np.pi / fft_size * k_max  # shape = (num_detected_obj, )
-    x_vector = wx / np.pi
 
-    y_vector = np.sqrt(1 - x_vector ** 2)
+    x_vector = np.sin(wx)
+    y_vector = np.cos(wx)
 
     return x_vector, y_vector
 

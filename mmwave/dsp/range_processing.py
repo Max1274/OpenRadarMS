@@ -14,7 +14,7 @@ import numpy as np
 from . import utils
 
 
-def range_resolution(num_adc_samples, dig_out_sample_rate=12000, freq_slope_const=5.649):
+def range_resolution(num_adc_samples, dig_out_sample_rate=6000, freq_slope_const=29.982):
     """ Calculate the range resolution for the given radar configuration
 
     Args:

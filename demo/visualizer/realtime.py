@@ -36,7 +36,7 @@ numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
 
 numRangeBins = numADCSamples
 numDopplerBins = numLoopsPerFrame
-numAngleBins = 64
+numAngleBins = 128
 
 range_resolution, bandwidth, max_range = dsp.range_resolution(numADCSamples)
 doppler_resolution, max_doppler = dsp.doppler_resolution(bandwidth)
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     while True:
         # (1) Reading in adc data
         adc_data = dca.read()
-        for i in range(numADCSampleMultiplier-1):
+        for i in range((numADCSampleMultiplier-1)):
             adc_data = np.append(adc_data, dca.read())
         frame = dca.organize(adc_data, num_chirps=numChirpsPerFrame, num_rx=numRxAntennas, num_samples=numADCSamples)
         frameCounter +=1
@@ -93,7 +93,7 @@ if __name__ == '__main__':
             det_matrix_vis = np.fft.fftshift(det_matrix, axes=1)
             plt.imshow(det_matrix_vis / 250, aspect='auto', \
                        extent=[-max_doppler, max_doppler, \
-                               0, max_range])
+                               max_range, 0])
             plt.pause(0.05)
             plt.clf()
             plt.title("Live Range-Doppler-Map frame: " + str(frameCounter))
@@ -141,10 +141,10 @@ if __name__ == '__main__':
 
         # --- Peak Grouping
         detObj2D = dsp.peak_grouping_along_doppler(detObj2DRaw, det_matrix, numDopplerBins)
-        SNRThresholds2 = np.array([[2, 10], [5, 8], [10, 8]])
-        peakValThresholds2 = np.array([[1, 100], [0.5, 100], [100, 0]])
         SNRThresholds2 = np.array([[2, 23], [10, 11.5], [35, 16.0]])
         peakValThresholds2 = np.array([[0, 275], [1, 400], [500, 0]])
+        #SNRThresholds2 = np.array([[2, 23], [10, 11.5], [35, 16.0]])
+        #peakValThresholds2 = np.array([[0, 275], [1, 400], [500, 0]])
         detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
                                            range_resolution)
 
@@ -209,7 +209,8 @@ if __name__ == '__main__':
             axes[1].set_xlabel('Azimuth')
             axes[1].grid(visible=True)
 
-            axes[0].scatter(xyVec[0]*range_resolution, xyVec[1], c='r', marker='o', s=3)
+            #axes[0].scatter(xyVec[0]*range_resolution, xyVec[1], c='r', marker='o', s=3)
+            axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=3)
             axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
             plt.pause(0.1)
             axes[0].clear()
