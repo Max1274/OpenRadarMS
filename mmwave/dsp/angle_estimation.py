@@ -867,8 +867,12 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
 
     return x_vector, y_vector
 
+def music_xy():
+    x=1
+    return x
 
-def beamforming_naive_mixed_xy(azimuth_input, input_ranges, range_resolution, method='Bartlett', num_vrx=8, est_range=90,
+
+def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range_resolution, doppler_resolution, numloopsperframe, method='Bartlett', num_vrx=8, est_range=90,
                                 est_resolution=1):
     """ This function estimates the XYZ location of a series of input detections by performing beamforming on the
     azimuth axis and naive AOA on the vertical axis.
@@ -911,11 +915,12 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, range_resolution, me
     if azimuth_input.shape[1] != num_vrx:
         raise ValueError("azimuthInput is the wrong shape. Change num_vrx if not using TI 1843 platform")
 
-    doa_var_thr = 10
+    doa_var_thr = 1
     num_vec, steering_vec = gen_steering_vec(est_range, est_resolution, 8)
 
     output_a_angles = []
     output_ranges = []
+    output_doppler = []
 
     for i, inputSignal in enumerate(azimuth_input):
         if method == 'Capon':
@@ -968,14 +973,17 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, range_resolution, me
 
                 output_ranges.append(input_ranges[i])
 
+                output_doppler.append(-numloopsperframe/2*doppler_resolution + doppler_resolution * input_doppler[i])
+
     theta = np.array(output_a_angles)
     ranges = np.array(output_ranges)
 
     # points could be calculated by trigonometry,
     x = np.sin(np.pi / 180 * theta) * ranges * range_resolution     # x = np.sin(azi) * range
     y = np.cos(np.pi / 180 * theta) * ranges * range_resolution     # y = np.cos(azi) * range
+    doppler = np.array(output_doppler)
 
-    xy_vec = np.array([x, y])
+    xy_vec = np.array([x, y, doppler])
 
     # return phi, theta, ranges
     return theta, ranges, xy_vec

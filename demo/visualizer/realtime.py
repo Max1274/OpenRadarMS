@@ -46,8 +46,8 @@ print("doppler resoltion: " + str(doppler_resolution))
 print("max range: " + str(max_range))
 print("max doppler: " + str(max_doppler))
 
-plotRangeDopp = True
-plot2DscatterXY = False
+plotRangeDopp = False
+plot2DscatterXY = True
 plotCustomPlt = False
 
 visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt
@@ -106,14 +106,18 @@ if __name__ == '__main__':
                                                                   arr=fft2d_sum.T,
                                                                   l_bound=1.5,
                                                                   guard_len=4,
-                                                                  noise_len=16)
+                                                                  noise_len=16,
+                                                                  #scale = 1.07
+                                                                  )
 
         thresholdRange, noiseFloorRange = np.apply_along_axis(func1d=dsp.ca_,
                                                               axis=0,
                                                               arr=fft2d_sum,
                                                               l_bound=2.5,
                                                               guard_len=4,
-                                                              noise_len=16)
+                                                              noise_len=16,
+                                                              #scale=1.07
+                                                              )
 
         thresholdDoppler, noiseFloorDoppler = thresholdDoppler.T, noiseFloorDoppler.T
         det_doppler_mask = (det_matrix > thresholdDoppler)

@@ -15,7 +15,7 @@ from . import compensation
 from . import utils
 
 
-def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=126.8, idle_time_const=5, num_loops_per_frame=128,
+def doppler_resolution(band_width, start_freq_const=77, ramp_end_time=70, idle_time_const=5, num_loops_per_frame=128,
                        num_tx_antennas=2):
     """Calculate the doppler resolution for the given radar configuration.
 

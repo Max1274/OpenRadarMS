@@ -16,18 +16,20 @@ import mmwave.dsp as dsp
 import mmwave.clustering as clu
 from mmwave.dataloader import DCA1000
 from demo.visualizer.visualize import ellipse_visualize
-
 import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.animation import FFMpegWriter
 from mpl_toolkits.mplot3d import Axes3D
 
-plt.rcParams['animation.ffmpeg_path'] = 'C:\\FFmpeg\\ffmpeg-2022-05-16-git-e3580f6077-full_build\\bin\\ffmpeg.exe'
+#plt.rcParams['animation.ffmpeg_path'] = 'C:\\FFmpeg\\ffmpeg-2022-05-16-git-e3580f6077-full_build\\bin\\ffmpeg.exe'
 
 plt.close('all')
 
 # QOL settings
 loadData = True
+datapath = r"C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\leicht_schraeg\\adc_data.bin"
 
-numFrames = 336
+numFrames = 900
 numADCSamples = 256
 numTxAntennas = 2
 numRxAntennas = 4
@@ -36,7 +38,7 @@ numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
 
 numRangeBins = numADCSamples
 numDopplerBins = numLoopsPerFrame
-numAngleBins = 64
+numAngleBins = 128
 
 '''
 range_resolution = 0.209
@@ -47,14 +49,21 @@ bandwidth = 716290000
 range_resolution, bandwidth, max_range = dsp.range_resolution(numADCSamples)
 doppler_resolution, max_doppler = dsp.doppler_resolution(bandwidth)
 
+print("range resolution: " + str(range_resolution))
+print("doppler resolution: " + str(doppler_resolution))
+
+max_range = 18
+max_doppler = 7
+
 plotRangeDopp = False
-plot2DscatterXY = True
-plotXYdoppler = False
+plot2DscatterXY = False
+plot2DXYdoppler = True
+plot3DXYdoppler = False
 plotCustomPlt = False
 
 plotMakeMovie = False
 
-visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt + plotXYdoppler
+visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt + plot3DXYdoppler
 assert visTrigger < 2, "Can only choose to plot one type of plot at once"
 
 singFrameView = False
@@ -82,7 +91,7 @@ if __name__ == '__main__':
     # (1) Reading in adc data
     if loadData:
         adc_data = np.fromfile(
-            'C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\_testdump\\adc_data.bin',
+            datapath,
             dtype=np.uint16)
         #adc_data = np.append(adc_data, np.fromfile(
         #    'C:\\Users\\I009140\\Desktop\\03_Inbetriebnahme DCA\\DUMP\\_highqualitydump\\adc_data_1.bin',
@@ -95,7 +104,9 @@ if __name__ == '__main__':
     # (1.5) Required Plot Declarations
     if plot2DscatterXY:
         fig, axes = plt.subplots(1, 2)
-    elif plotXYdoppler:
+    elif plot2DXYdoppler:
+        fig, axes = plt.subplots(1, 2)
+    elif plot3DXYdoppler:
         fig, axes = plt.subplots(subplot_kw={"projection": "3d"})
     elif plotRangeDopp:
         fig = plt.figure()
@@ -109,15 +120,8 @@ if __name__ == '__main__':
     else:
         dataCube = adc_data
 
-    # Optional MovieWriter - MS
-    if plotMakeMovie:
-        import matplotlib.animation as manimation
 
-        FFMpegWriter = manimation.writers['ffmpeg']
-        metadata = dict(title='movietest', artist='MS')
-        writer = FFMpegWriter(fps=3, metadata=metadata)
-
-    for i, frame in enumerate(dataCube):
+    for i, frame in enumerate(dataCube[60:]):        #leicht_schraeg:50, gerade_vor:120
         #        print(i,end=',') # Frame tracker
         # (2) Range Processing
         from mmwave.dsp.utils import Window
@@ -142,6 +146,7 @@ if __name__ == '__main__':
                 plt.title("Range-Doppler plot " + str(i))
                 plt.pause(0.01)
                 plt.clf()
+            continue
 
         # (4) Object Detection
         # --- CFAR, SNR is calculated as well.
@@ -150,15 +155,19 @@ if __name__ == '__main__':
                                                                   axis=0,
                                                                   arr=fft2d_sum.T,
                                                                   #l_bound=1.5,
-                                                                  guard_len=4,
-                                                                  noise_len=8)
+                                                                  guard_len=3,
+                                                                  noise_len=8,
+                                                                  scale = 1.08
+                                                                  )
 
         thresholdRange, noiseFloorRange = np.apply_along_axis(func1d=dsp.os_,
                                                               axis=0,
                                                               arr=fft2d_sum,
                                                               #l_bound=2.5,
-                                                              guard_len=4,
-                                                              noise_len=8)
+                                                              guard_len=3,
+                                                              noise_len=8,
+                                                              scale = 1.08
+                                                              )
 
         thresholdDoppler, noiseFloorDoppler = thresholdDoppler.T, noiseFloorDoppler.T
         det_doppler_mask = (det_matrix > thresholdDoppler)
@@ -182,16 +191,16 @@ if __name__ == '__main__':
         detObj2DRaw['SNR'] = snr.flatten()
 
         # Further peak pruning. This increases the point cloud density but helps avoid having too many detections around one object.
-        detObj2DRaw = dsp.prune_to_peaks(detObj2DRaw, det_matrix, numDopplerBins, reserve_neighbor=True)
+        detObj2DRaw = dsp.prune_to_peaks(detObj2DRaw, det_matrix, numDopplerBins, reserve_neighbor=False)
 
         # --- Peak Grouping
         detObj2D = dsp.peak_grouping_along_doppler(detObj2DRaw, det_matrix, numDopplerBins)
         SNRThresholds2 = np.array([[2, 23], [10, 11.5], [35, 16.0]])
-        peakValThresholds2 = np.array([[0, 275], [1, 400], [500, 0]])
-        #SNRThresholds2 = np.array([[2, 10], [5, 8], [10, 8]])
-        #peakValThresholds2 = np.array([[1, 100], [0.5, 100], [100, 0]])
+        peakValThresholds2 = np.array([[0.5, 275], [1, 400], [500, 0]])
+        #SNRThresholds2 = np.array([[2, 2], [10, 4], [35, 4]])
+        #peakValThresholds2 = np.array([[1, 100], [0.5, 400], [500, 0]])
 
-        detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
+        detObj2D = dsp.range_based_pruning(detObj2DRaw, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
                                            range_resolution)
 
         azimuthInput = aoa_input[detObj2D['rangeIdx'], :, detObj2D['dopplerIdx']]
@@ -203,10 +212,10 @@ if __name__ == '__main__':
         xyVecN = np.zeros((3, x.shape[0]))
         xyVecN[0] = x * range_resolution * detObj2D['rangeIdx']
         xyVecN[1] = y * range_resolution * detObj2D['rangeIdx']
-        xyVecN[2] = doppler_resolution * detObj2D['dopplerIdx']
+        xyVecN[2] = -numLoopsPerFrame/2*doppler_resolution + doppler_resolution * detObj2D['dopplerIdx']
 
-        Theta, Ranges, xyVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detObj2D['rangeIdx'],
-                                                              range_resolution, method='Bartlett')
+        Theta, Ranges, xydoppVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detObj2D['rangeIdx'], detObj2D['dopplerIdx'],
+                                                              range_resolution, doppler_resolution, numLoopsPerFrame, method='Bartlett')
 
         # (5) 3D-Clustering
         # detObj2D must be fully populated and completely accurate right here
@@ -222,12 +231,12 @@ if __name__ == '__main__':
                 # copy last row
                 detObj2D_f = np.insert(detObj2D_f, j, detObj2D_f[j - 1], axis=0)
             if currRange == detObj2D_f[j][0]:
-                detObj2D_f[j][3] = xyVec[0][j]
-                detObj2D_f[j][4] = xyVec[1][j]
+                detObj2D_f[j][3] = xydoppVec[0][j]
+                detObj2D_f[j][4] = xydoppVec[1][j]
             else:  # Copy then populate
                 detObj2D_f = np.insert(detObj2D_f, j, detObj2D_f[j - 1], axis=0)
-                detObj2D_f[j][3] = xyVec[0][j]
-                detObj2D_f[j][4] = xyVec[1][j]
+                detObj2D_f[j][3] = xydoppVec[0][j]
+                detObj2D_f[j][4] = xydoppVec[1][j]
 
                 # radar_dbscan(epsilon, vfactor, weight, numPoints)
         #        cluster = radar_dbscan(detObj2D_f, 1.7, 3.0, 1.69 * 1.7, 3, useElevation=True)
@@ -245,24 +254,46 @@ if __name__ == '__main__':
         if plot2DscatterXY:
             plt.title("XY scatter " + str(i))
 
-            axes[0].set_ylim(bottom=0, top=10)
+            axes[0].set_ylim(bottom=0, top=max_range)
             axes[0].set_ylabel('Range')
-            axes[0].set_xlim(left=-4, right=4)
+            axes[0].set_xlim(left=-10, right=10)
             axes[0].set_xlabel('Azimuth')
             axes[0].grid(visible=True)
 
-            axes[1].set_ylim(bottom=0, top=10)
-            axes[1].set_xlim(left=-4, right=4)
+            axes[1].set_ylim(bottom=0, top=max_range)
+            axes[1].set_xlim(left=-10, right=10)
             axes[1].set_xlabel('Azimuth')
             axes[1].grid(visible=True)
 
-            axes[0].scatter(xyVec[0], xyVec[1], c='r', marker='o', s=3)
-            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=3)
+            axes[0].scatter(xydoppVec[0], xydoppVec[1], c='r', marker='o', s=10)
+            axes[1].scatter(xyVecN[0], xyVecN[1], c='b', marker='o', s=10)
             plt.pause(0.001)
             axes[0].clear()
             axes[1].clear()
 
-        elif plotXYdoppler:
+        elif plot2DXYdoppler:
+            plt.title("XY scatter " + str(i))
+
+            axes[0].set_ylim(bottom=0, top=max_range)
+            axes[0].set_ylabel('Range')
+            axes[0].set_xlim(left=-10, right=10)
+            axes[0].set_xlabel('Azimuth')
+            axes[0].grid(visible=True)
+
+            axes[1].set_ylim(bottom=0, top=max_range)
+            axes[1].set_xlim(left=-10, right=10)
+            axes[1].set_xlabel('Azimuth')
+            axes[1].grid(visible=True)
+
+            axes[0].scatter(xydoppVec[0], xydoppVec[1], c = xydoppVec[2], vmin = -max_doppler, vmax = max_doppler, marker='o', s=10, cmap = cm.jet)
+            sc = axes[1].scatter(xyVecN[0], xyVecN[1], c = xyVecN[2], vmin = -max_doppler, vmax = max_doppler, marker='o', s=10, cmap = cm.jet)
+            cb = plt.colorbar(sc)
+            plt.pause(0.001)
+            axes[0].clear()
+            axes[1].clear()
+            cb.remove()
+
+        elif plot3DXYdoppler:
             plt.title("XY doppler: " + str(i))
 
             axes.set_xlim(0, max_range)
@@ -281,3 +312,5 @@ if __name__ == '__main__':
     if visTrigger and plotMakeMovie:
         # movieMaker(fig, ims, makeMovieTitle, makeMovieDirectory)
         pass
+
+

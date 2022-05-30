@@ -327,7 +327,7 @@ def os(x, *argv, **kwargs):
     return ret
 
 
-def os_(x, guard_len=0, noise_len=8, k=12, scale=1.0):
+def os_(x, guard_len=0, noise_len=8, k=4, scale=1.0):
     """Performs Ordered-Statistic CFAR (OS-CFAR) detection on the input array.
 
     Args:
