@@ -107,7 +107,8 @@ def radar_dbscan(det_obj_2d, weight, doppler_resolution, use_elevation=False):
         use_elevation * (obj1[5] - obj2[5]) ** 2 + \
         weight * ((obj1[1] - obj2[1]) * doppler_resolution) ** 2
 
-    labels = DBSCAN(eps=1.25, min_samples=1, metric=custom_distance).fit_predict(det_obj_2d)
+    labels = DBSCAN(eps=1.25, min_samples=2, metric=custom_distance).fit_predict(det_obj_2d)
+    det_obj_2d['cluster'] = labels
     unique_labels = sorted(
         set(labels[labels >= 0]))  # Exclude the points clustered as noise, i.e, with negative labels.
     dtype_location = '(' + str(2 + use_elevation) + ',)<f4'
@@ -122,3 +123,49 @@ def radar_dbscan(det_obj_2d, weight, doppler_resolution, use_elevation=False):
         clusters['avgVelocity'][label] = np.mean(det_obj_2d[:, 1], axis=0) * doppler_resolution
 
     return clusters
+
+def radar_dbscan_ms(det_obj_2d, weight, doppler_resolution):
+    """DBSCAN for point cloud. Directly call the scikit-learn.dbscan with customized distance metric.
+
+    DBSCAN algorithm for clustering generated point cloud. It directly calls the dbscan from scikit-learn but with
+    customized distance metric to combine the coordinates and weighted velocity information.
+
+    Args:
+        det_obj_2d (ndarray): Numpy array containing the rangeIdx, dopplerIdx, peakVal, xyz coordinates of each detected
+            points. Can have extra SNR entry, not necessary and not used.
+        weight (float): Weight for velocity information in combined distance metric.
+        doppler_resolution (float): Granularity of the doppler measurements of the radar.
+        use_elevation (bool): Toggle to use elevation information for DBSCAN and output clusters.
+
+    Returns:
+        clusters (np.ndarray): Numpy array containing the clusters' information including number of points, center and
+            size of the clusters in x,y,z coordinates and average velocity. It is formulated as the structured array for
+            numpy.
+    """
+
+    X = np.column_stack((det_obj_2d['location_x'], det_obj_2d['location_y'], det_obj_2d['doppler']))
+
+    # epsilon defines max cluster width
+    custom_distance = lambda obj1, obj2: \
+        (obj1[0] - obj2[0]) ** 2 + \
+        (obj1[1] - obj2[1]) ** 2 + \
+        weight * ((obj1[2] - obj2[2])) ** 2
+
+    labels = DBSCAN(eps=3, min_samples=7, metric=custom_distance).fit_predict(X)
+    det_obj_2d['cluster'] = labels
+    unique_labels = sorted(
+        set(labels[labels >= 0]))  # Exclude the points clustered as noise, i.e, with negative labels.
+    dtype_location = '(2,)<f4'
+    dtype_clusters = np.dtype({'names': ['num_points', 'center', 'size', 'avgVelocity'],
+                               'formats': ['<u4', dtype_location, dtype_location, '<f4']})
+    clusters = np.zeros(len(unique_labels), dtype=dtype_clusters)
+    for label in unique_labels:
+        clusters['num_points'][label] = X[label == labels].shape[0]
+        clusters['center'][label] = np.mean(X[label == labels, 0:1], axis=0)[:2]
+        clusters['size'][label] = np.amax(X[label == labels, 0:1], axis=0)[:2] - \
+                                  np.amin(X[label == labels, 0:1], axis=0)[:2]
+        clusters['avgVelocity'][label] = np.mean(X[:, 2], axis=0)
+
+    return clusters
+
+

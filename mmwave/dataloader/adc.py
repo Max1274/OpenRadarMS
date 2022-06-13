@@ -14,7 +14,6 @@ import codecs
 import socket
 import struct
 from enum import Enum
-
 import numpy as np
 
 

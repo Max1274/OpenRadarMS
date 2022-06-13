@@ -867,11 +867,6 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
 
     return x_vector, y_vector
 
-def music_xy():
-    x=1
-    return x
-
-
 def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range_resolution, doppler_resolution, numloopsperframe, method='Bartlett', num_vrx=8, est_range=90,
                                 est_resolution=1):
     """ This function estimates the XYZ location of a series of input detections by performing beamforming on the
@@ -924,7 +919,7 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range
 
     for i, inputSignal in enumerate(azimuth_input):
         if method == 'Capon':
-            doa_spectrum, _ = aoa_capon(np.reshape(inputSignal[:8], (8, 1)).T, steering_vec)
+            doa_spectrum, _ = aoa_capon(np.reshape(inputSignal[:8], (1, 8)).T, steering_vec)
             doa_spectrum = np.abs(doa_spectrum)
         elif method == 'Bartlett':
             doa_spectrum = aoa_bartlett(steering_vec, np.reshape(inputSignal[:8], (8, 1)), axis=0)
@@ -954,26 +949,16 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range
                 e_angle = np.arcsin(wz)
                 a_angle = -1 * (np.pi / 180) * temp_angle  # Degrees to radians
 
-                # print(e_angle)
-                # if (np.sin(a_angle)/np.cos(e_angle)) > 1 or (np.sin(a_angle)/np.cos(e_angle)) < -1:
-                # print("Found you", (np.sin(a_angle)/np.cos(e_angle)))
-                # assert np.cos(e_angle) == np.nan, "Found you"
-
-                # TODO: Not sure how to deal with arg of arcsin >1 or <-1
-#                if np.sin(a_angle)/np.cos(e_angle) > 1:
-#                    output_a_angles.append((180 / np.pi) * np.arcsin(1))
-#                    print("Found a pesky nan")
-#                elif np.sin(a_angle)/np.cos(e_angle) < -1:
-#                    output_a_angles.append((180 / np.pi) * np.arcsin(-1))
-#                    print("Found a pesky nan")
-#                else:
-#                    output_a_angles.append((180 / np.pi) * np.arcsin(np.sin(a_angle)/np.cos(e_angle))) # Why
-
-                output_a_angles.append((180 / np.pi) * np.arcsin(np.sin(a_angle) * np.cos(e_angle)))  # Why
+                output_a_angles.append((180 / np.pi) * np.arcsin(np.sin(a_angle) * np.cos(e_angle)))
+                #TODO: why?
 
                 output_ranges.append(input_ranges[i])
-
-                output_doppler.append(-numloopsperframe/2*doppler_resolution + doppler_resolution * input_doppler[i])
+                # determine whether doppler index corresponds to positive or negative velocity
+                # if d_Idx >= num_doppler_bins/2 then d_Idx = d_Idx - num_doppler_bins      --> negative velocity
+                # else d_Idx = d_Idx --> positive velocity
+                if input_doppler[i] >= numloopsperframe/2:
+                    input_doppler[i] = input_doppler[i] - numloopsperframe
+                output_doppler.append((input_doppler[i])*doppler_resolution)       #-numloopsperframe/2+
 
     theta = np.array(output_a_angles)
     ranges = np.array(output_ranges)

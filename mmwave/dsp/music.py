@@ -73,7 +73,7 @@ def aoa_root_music_1D(steering_vec, rx_chirps, num_sources):
     coeffs = np.hstack((coeffs[::-1], np.sum(np.diag(v)), coeffs.conj()))
     
     z = np.roots(coeffs)
-    z = np.abs(z[z <= 1.0])
+    #z = np.abs(z[z <= 1.0])
     if len(z) < num_sources:
         return None
     z.sort()

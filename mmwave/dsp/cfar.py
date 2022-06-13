@@ -13,6 +13,7 @@
 import numpy as np
 from scipy.ndimage import convolve1d
 
+
 """ Various cfar algorithm types
 
 From https://www.mathworks.com/help/phased/ug/constant-false-alarm-rate-cfar-detectors.html
@@ -148,6 +149,147 @@ def caso(x, *argv, **kwargs):
     threshold, _ = caso_(x, *argv, **kwargs)
     ret = (x > threshold)
     return ret
+
+def log_factorial(n):
+    """
+    QUELLE: https://github.com/alonet14/HRReference/blob/8c0c0f20b0faa327c56075bc90a631ac91f41003/lib/radarsimpy/tools.py
+
+
+    Compute the factorial of 'n' using logarithms to avoid overflow
+    :param int n:
+        Integer number
+    :return:
+        log(n!)
+    :rtype: float
+    """
+
+    n = n+9.0
+    n2 = n**2
+    return (n-1)*np.log(n)-n+np.log(np.sqrt(2*np.pi*n)) + \
+        ((1-(1/30+(1/105)/n2)/n2)/12)/n - \
+        np.log((n-1)*(n-2)*(n-3)*(n-4)*(n-5)*(n-6)*(n-7)*(n-8))
+
+
+def os_cfar_threshold(k, n, pfa):
+    """
+    Use Secant method to calculate OS-CFAR's threshold
+    :param int n:
+        Number of cells around CUT (cell under test) for calculating
+    :param int k:
+        Rank in the order
+    :param float pfa:
+        Probability of false alarm
+    :return: CFAR threshold
+    :rtype: float
+    *Reference*
+    Rohling, Hermann. "Radar CFAR thresholding in clutter and multiple target
+    situations." IEEE transactions on aerospace and electronic systems 4
+    (1983): 608-621.
+    """
+
+    def fun(k, n, Tos, pfa):
+        return log_factorial(n)-log_factorial(n-k) - \
+            np.sum(np.log(np.arange(n, n-k, -1)+Tos))-np.log(pfa)
+
+    max_iter = 10000
+
+    t_max = 1e32
+    t_min = 1
+
+    for idx in range(0, max_iter):
+
+        m_n = t_max-fun(k, n, t_max, pfa)*(t_min-t_max) / \
+            (fun(k, n, t_min, pfa) -
+             fun(k, n, t_max, pfa))
+        f_m_n = fun(k, n, m_n, pfa)
+        if f_m_n == 0:
+            return m_n
+        elif np.abs(f_m_n) < 0.0001:
+            return m_n
+        elif fun(k, n, t_max, pfa)*f_m_n < 0:
+            t_max = t_max
+            t_min = m_n
+        elif fun(k, n, t_min, pfa)*f_m_n < 0:
+            t_max = m_n
+            t_min = t_min
+        else:
+            # print("Secant method fails.")
+            break
+
+    return None
+
+def cfar_os(
+        data,
+        n,
+        k,
+        pfa=1e-5,
+        axis=0,
+        offset=None):
+    """
+    QUELLE: https://github.com/alonet14/HRReference/blob/8c0c0f20b0faa327c56075bc90a631ac91f41003/lib/radarsimpy/processing.py
+
+
+    Ordered Statistic CFAR (OS-CFAR)
+    For edge cells, use rollovered cells to fill the missing cells.
+    :param data:
+        Radar data
+    :type data: numpy.1darray or numpy.2darray
+    :param int n:
+        Number of cells around CUT (cell under test) for calculating
+    :param int k:
+        Rank in the order
+    :param float pfa:
+        Probability of false alarm. ``default 1e-5``
+    :param int axis:
+        The axis to calculat CFAR. ``default 0``
+    :param float offset:
+        CFAR threshold offset. If offect is None, threshold offset is
+        calculated from ``pfa``. ``default None``
+    :return: CFAR threshold. The dimension is the same as ``data``
+    :rtype: numpy.1darray or numpy.2darray
+    *Reference*
+    [1] H. Rohling, “Radar CFAR Thresholding in Clutter and Multiple Target
+    Situations,” IEEE Trans. Aerosp. Electron. Syst., vol. AES-19, no. 4,
+    pp. 608–621, 1983.
+    """
+
+    data = np.abs(data)
+    data_shape = np.shape(data)
+    cfar = np.zeros_like(data)
+    leading = np.floor(n/2)
+    trailing = n-leading
+
+    if offset is None:
+        a = os_cfar_threshold(k, n, pfa)
+    else:
+        a = offset
+
+    if axis == 0:
+        for idx in range(0, data_shape[0]):
+            win_idx = np.mod(
+                np.concatenate(
+                    [np.arange(idx-leading, idx, 1),
+                        np.arange(idx+1, idx+1+trailing, 1)]
+                ), data_shape[0])
+            if data.ndim == 1:
+                samples = np.sort(data[win_idx.astype(int)])
+                cfar[idx] = a*samples[k]
+            elif data.ndim == 2:
+                samples = np.sort(data[win_idx.astype(int), :], axis=0)
+                cfar[idx, :] = a*samples[k, :]
+
+    elif axis == 1:
+        for idx in range(0, data_shape[1]):
+            win_idx = np.mod(
+                np.concatenate(
+                    [np.arange(idx-leading, idx, 1),
+                     np.arange(idx+1, idx+1+trailing, 1)]
+                ), data_shape[1])
+            samples = np.sort(data[:, win_idx.astype(int)], axis=1)
+
+            cfar[:, idx] = a*samples[:, k]
+
+    return cfar
 
 
 def caso_(x, guard_len=4, noise_len=8, mode='wrap', l_bound=4000):
@@ -327,7 +469,7 @@ def os(x, *argv, **kwargs):
     return ret
 
 
-def os_(x, guard_len=0, noise_len=8, k=4, scale=1.0):
+def os_ms(x, guard_len=0, noise_len=8, k=6, scale=1.0, axis=None):
     """Performs Ordered-Statistic CFAR (OS-CFAR) detection on the input array.
 
     Args:
@@ -354,31 +496,54 @@ def os_(x, guard_len=0, noise_len=8, k=4, scale=1.0):
     if isinstance(x, list):
         x = np.array(x, dtype=np.uint32)
 
-    n = len(x)
-    noise_floor = np.zeros(n)
-    threshold = np.zeros(n, dtype=np.float32)
-    cut_idx = -1
+    if axis==None:
+        assert 'Please insert axis!'
 
-    # Initial CUT
-    left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
-    right_idx = list(np.arange(guard_len, guard_len + noise_len))
+    shape = np.shape(x)
+    noise_floor = np.zeros_like(x, dtype=np.float32)
+    threshold = np.zeros_like(x, dtype=np.float32)
 
-    # All other CUTs
-    while cut_idx < (n - 1):
-        cut_idx += 1
+    if axis==0:
+        n=shape[1]
+        #Initial CUT
+        left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
+        right_idx = list(np.arange(guard_len, guard_len + noise_len))
+        for j in range(0, shape[0]):
+            cut_idx = -1
+            while cut_idx < (n - 1):
+                cut_idx += 1
 
-        left_idx.pop(0)
-        left_idx.append((cut_idx - 1) % n)
+                left_idx.pop(0)
+                left_idx.append((cut_idx - 1) % n)
 
-        right_idx.pop(0)
-        right_idx.append((cut_idx + guard_len + noise_len) % n)
+                right_idx.pop(0)
+                right_idx.append((cut_idx + guard_len + noise_len) % n)
 
-        window = np.concatenate((x[left_idx], x[right_idx]))
-        window.partition(k)
-        noise_floor[cut_idx] = window[k]
-        threshold[cut_idx] = noise_floor[cut_idx] * scale
+                window = np.concatenate((x[j][left_idx], x[j][right_idx]))
+                window.partition(k)
+                noise_floor[j][cut_idx] = window[k]
 
-    return threshold, noise_floor
+    elif axis==1:
+        n = shape[0]
+        # Initial CUT
+        left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
+        right_idx = list(np.arange(guard_len, guard_len + noise_len))
+        for j in range(0, shape[1]):
+            cut_idx = -1
+            while cut_idx < (n - 1):
+                cut_idx += 1
+
+                left_idx.pop(0)
+                left_idx.append((cut_idx - 1) % n)
+
+                right_idx.pop(0)
+                right_idx.append((cut_idx + guard_len + noise_len) % n)
+
+                window = np.concatenate((x[left_idx][:,j], x[right_idx][:,j]))
+                window.partition(k)
+                noise_floor[cut_idx][j] = window[k]
+
+    return np.multiply(noise_floor, scale), noise_floor
 
 
 def _cfar_windows(x, guard_len, noise_len, mode):
