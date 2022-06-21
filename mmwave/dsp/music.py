@@ -1,6 +1,9 @@
 import numpy as np
 import numpy.linalg as LA
-from .angle_estimation import cov_matrix
+#rom .angle_estimation import cov_matrix
+from mmwave.dsp import cov_matrix
+from . import gen_steering_vec
+
 
 def _noise_subspace(covariance, num_sources):
     """helper function to get noise_subspace.
@@ -37,6 +40,41 @@ def aoa_music_1D(steering_vec, rx_chirps, num_sources):
         raise ValueError("number of sources shoule not exceed number ")
     
     R = cov_matrix(rx_chirps)
+    noise_subspace = _noise_subspace(R, num_sources)
+    v = noise_subspace.T.conj() @ steering_vec.T
+    spectrum = np.reciprocal(np.sum(v * v.conj(), axis=0).real)
+
+    return spectrum
+
+
+def aoa_music_1D_sv(rx_chirps, num_sources):
+    """Implmentation of 1D MUltiple SIgnal Classification (MUSIC) algorithm on ULA (Uniformed Linear Array).
+
+    Current implementation assumes covariance matrix is not rank deficient and ULA spacing is half of the wavelength.
+    .. math::
+        P_{} (\\theta) = \\frac{1}{a^{H}(\\theta) \mathbf{E}_\mathrm{n}\mathbf{E}_\mathrm{n}^H a(\\theta)}
+    where :math:`E_{n}` is the noise subpace and :math:`a` is the steering vector.
+
+
+    Args:
+        steering_vec (~np.ndarray): steering vector with the shape of (FoV/angel_resolution, num_ant).
+         FoV/angel_resolution is usually 181. It is generated from gen_steering_vec() function.
+        rx_chirps (~np.ndarray): Ouput of the 1D range FFT. The shape is (num_ant, num_chirps_per_frame).
+        num_sources (int): Number of sources in the scene. Needs to be smaller than num_ant for ULA.
+
+    Returns:
+        (~np.ndarray): the spectrum of the MUSIC. Objects should be holes for the equation and thus sharp peaks.
+    """
+    num_antennas = rx_chirps.shape[0]
+    if num_antennas < num_sources:
+        raise ValueError("number of sources shoule not exceed number ")
+
+    R = cov_matrix(rx_chirps)
+    if R.shape[0] > 2:
+        R = aoa_spatial_smoothing(R, 2, False)
+
+    num_vec, steering_vec = gen_steering_vec(90,1,R.shape[0])
+
     noise_subspace = _noise_subspace(R, num_sources)
     v = noise_subspace.T.conj() @ steering_vec.T
     spectrum = np.reciprocal(np.sum(v * v.conj(), axis=0).real)

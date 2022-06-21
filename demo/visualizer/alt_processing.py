@@ -52,8 +52,9 @@ max_doppler = 7
 
 plotRangeDopp = False
 plot2DXYdoppler = False
-plot2DXYClusters = True
-saveVideo = False
+plot2DXYClusters = False
+plot2DXYdopplervar = True
+saveVideo = True
 
 
 def main():
@@ -76,10 +77,12 @@ def main():
         fig, axes = plt.subplots(1, 2)
     elif plot2DXYClusters:
         fig, axes = plt.subplots(1, 2)
+    elif plot2DXYdopplervar:
+        fig, axes = plt.subplots(1, 2)
     elif plotRangeDopp:
         fig = plt.figure()
 
-    for i, frame in enumerate(adc_data[50:450]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
+    for i, frame in enumerate(adc_data[50:400]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
         #        print(i,end=',') # Frame tracker
         # (2) Range Processing
         start = time.time()
@@ -93,12 +96,8 @@ def main():
                                                        window_type_2d=Window.HAMMING)
 
         #evaluate doppler variance for Micro-Doppler-recognition of wheels
-        md_mat = np.fft.fft(aoa_input, axis=1)
-        md_mat = np.fft.fftshift(md_mat, axes=2)
-        md_mat = np.abs(md_mat)
-        md_mat = md_mat-np.min(md_mat)
-
-
+        doppler_var = dsp.get_micro_doppler(aoa_input, numLoopsPerFrame)
+        doppler_var_sum_angle = np.sum(doppler_var, axis=1)
 
         # --- Show output
         if plotRangeDopp:
@@ -122,21 +121,14 @@ def main():
               #                                              scale=1.07
                #                                            )
 
-        #thresholdRange, noiseFloorRange = np.apply_along_axis(func1d=dsp.os_,
-         #                                                     axis=0,
-          #                                                    arr=fft2d_sum,
-           #                                                   # l_bound=2.5,
-            #                                                  guard_len=4,
-             #                                                 noise_len=10,
-              #                                                scale=1.07
-                #                                              )
-
-        #thresholdRange = dsp.cfar_os(fft2d_sum, n=32, k=24, offset=1.02, axis=0)
-        thresholdRange, noiseRange = dsp.os_ms(fft2d_sum, guard_len=4, noise_len=10, scale=1.07, axis=0)
-        #thresholdDoppler, noiseDoppler = dsp.os_ms(fft2d_sum, guard_len=4, noise_len=16, scale=1.1, axis=1)
-
-        end = time.time()
-        print("execution time " + str(i) + ": " + str(end - start))
+        thresholdRange, noiseFloorRange = np.apply_along_axis(func1d=dsp.os_,
+                                                              axis=0,
+                                                              arr=fft2d_sum,
+                                                              # l_bound=2.5,
+                                                              guard_len=4,
+                                                              noise_len=10,
+                                                              scale=1.07
+                                                              )
 
         #thresholdDoppler, noiseFloorDoppler = thresholdDoppler.T, noiseFloorDoppler.T
         det_doppler_mask = (fft2d_sum > 0)
@@ -160,8 +152,9 @@ def main():
         #detRefl['SNR'] = snr.flatten()
 
         azimuthInput = aoa_input[detRefl['rangeIdx'], :, detRefl['dopplerIdx']]
-
-        Theta, Ranges, xydoppVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detRefl['rangeIdx'],
+        #azimuthInput = azimuthInput[...,np.newaxis]
+        #azimuthInput[:,:,0] = doppler_var[detRefl['rangeIdx'], :, detRefl['dopplerIdx']]
+        Theta, Ranges, dopplerIdx, xydoppVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detRefl['rangeIdx'],
                                                                   detRefl['dopplerIdx'],
                                                                   range_resolution, doppler_resolution,
                                                                   numLoopsPerFrame, method='Bartlett')
@@ -169,13 +162,14 @@ def main():
         # (5) 3D-Clustering
         # detObj2D must be fully populated and completely accurate right here
         numDetObjs = Ranges.shape[0]
-        dtf = np.dtype({'names': ['location_x','location_y','azimuth', 'doppler', 'cluster'],
-                        'formats': ['<f4', '<f4', '<f4', '<f4', '<i4']})
+        dtf = np.dtype({'names': ['location_x','location_y','azimuth', 'doppler', 'cluster', 'variance_D'],
+                        'formats': ['<f4', '<f4', '<f4', '<f4', '<i4', '<f4']})
         detObj2D = np.zeros((numDetObjs,), dtype=dtf)
         detObj2D['location_x'] = xydoppVec[0]
         detObj2D['location_y'] = xydoppVec[1]
         detObj2D['azimuth'] = Theta
         detObj2D['doppler'] = xydoppVec[2]
+        detObj2D['variance_D'] = doppler_var_sum_angle[Ranges, dopplerIdx]
 
         if len(detObj2D) > 0:
             cluster = clu.radar_dbscan_ms(detObj2D, 4, doppler_resolution)
@@ -184,9 +178,8 @@ def main():
                 if detObj2D_nf['cluster'][j] == -1:
                     detObj2D_nf = np.delete(detObj2D_nf, j, axis=0)
 
-            #for j in range(detObj2D_nf['cluster']):
-
-
+        end = time.time()
+        print("execution time " + str(i) + ": " + str(end - start))
 
 
 
@@ -259,13 +252,47 @@ def main():
                 p = [p0, p1, ann0, ann1]
                 ims.append(p)
 
+        elif plot2DXYdopplervar:
+            ann0 = axes[0].annotate(f"XY scatter " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
+            ann1 = axes[1].annotate(f"Clusters " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
+
+            axes[0].set_ylim(bottom=0, top=max_range)
+            axes[0].set_ylabel('x-range [m]')
+            axes[0].set_xlim(left=-10, right=10)
+            axes[0].set_xlabel('y-range [m]')
+            axes[0].grid(visible=True)
+
+            axes[1].set_ylim(bottom=0, top=max_range)
+            axes[1].set_ylabel('x-range [m]')
+            axes[1].set_xlim(left=-10, right=10)
+            axes[1].set_xlabel('y-range [m]')
+            axes[1].grid(visible=True)
+
+            if not saveVideo:
+                p0 = axes[0].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['doppler'],
+                                     vmin=-max_doppler, vmax=max_doppler, marker='o', s=20, cmap=cm.jet)
+                p1 = axes[1].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['variance_D'],
+                                     marker='o', s=20, cmap=cm.jet)
+                cb0 = plt.colorbar(p0, ax=axes[0])
+                plt.pause(0.1)
+                axes[0].clear()
+                axes[1].clear()
+                cb0.remove()
+            else:
+                p0 = axes[0].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['doppler'],
+                                     vmin=-max_doppler, vmax=max_doppler, marker='o', s=5, cmap=cm.jet)
+                p1 = axes[1].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['variance_D'],
+                                     marker='o', s=5, cmap=cm.jet)
+                p = [p0, p1, ann0, ann1]
+                ims.append(p)
+
         else:
             sys.exit("Unknown plot options.")
 
     if saveVideo:
         cb = fig.colorbar(p0, ax=axes[0])
         ani = animation.ArtistAnimation(fig, ims, repeat=False, blit=True)
-        ani.save(datapath + 'auswertung_scale_1_07_clustered.mp4', dpi=200, fps=1 / 0.035)
+        ani.save(datapath + 'auswertung_scale_1_07_dopplervar.mp4', dpi=200, fps=1 / 0.035)
 
 
 if __name__ == '__main__':

@@ -15,6 +15,8 @@ from .utils import *
 from . import compensation
 from scipy.signal import find_peaks
 import warnings
+from . import doppler_processing
+#from . import music
 import math
 
 def azimuth_processing(radar_cube, det_obj_2d, config, window_type_2d=None):
@@ -326,7 +328,7 @@ def peak_search(doa_spectrum, peak_threshold_weight=0.251188643150958):
     return num_max, peaks, total_power
 
 
-def peak_search_full(doa_spectrum, gamma=1.2, peak_threshold_weight=0.251188643150958):
+def peak_search_full(doa_spectrum, gamma=1.0, peak_threshold_weight=0.251188643150958):
     """ Perform TI prescribed peak search algorithm
     Tested Runtime: 147 µs ± 4.27 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)
 
@@ -394,7 +396,7 @@ def peak_search_full(doa_spectrum, gamma=1.2, peak_threshold_weight=0.2511886431
     return num_max, ang_est
 
 
-def peak_search_full_variance(doa_spectrum, steering_vec_size, sidelobe_level=0.251188643150958, gamma=1.2):
+def peak_search_full_variance(doa_spectrum, steering_vec_size, sidelobe_level=0.251188643150958, gamma=1.0):
     """ Performs peak search (TI's full search) will retaining details about each peak including
     each peak's width, location, and value.
 
@@ -867,14 +869,22 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
 
     return x_vector, y_vector
 
+def music_analysis(fft1d_out, est_range=90, num_vrx=8, est_resolution=1):
+    steering_vector = gen_steering_vec(est_range, est_resolution, num_vrx)
+    radar_cube = doppler_processing.separate_tx(fft1d_out, 2, vx_axis=1, axis=0)
+    radar_cube = np.transpose(radar_cube, axes=(2, 1, 0))
+    num_vec, steering_vector = gen_steering_vec(90, 1, 8)
+    music_spectrum = aoa_music_1D(steering_vector, radar_cube[0, :, :], 7)
+
+
+
 def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range_resolution, doppler_resolution, numloopsperframe, method='Bartlett', num_vrx=8, est_range=90,
                                 est_resolution=1):
     """ This function estimates the XYZ location of a series of input detections by performing beamforming on the
     azimuth axis and naive AOA on the vertical axis.
         
-    TI xWR1843 virtual antenna map
-    Row 1               8  9  10 11
-    Row 2         0  1  2  3  4  5  6  7
+    TI xWR1642 virtual antenna map
+    Row 1         0  1  2  3  4  5  6  7
 
     phi (ndarray):
     theta (ndarray):
@@ -916,6 +926,7 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range
     output_a_angles = []
     output_ranges = []
     output_doppler = []
+    doppleridx = []
 
     for i, inputSignal in enumerate(azimuth_input):
         if method == 'Capon':
@@ -953,6 +964,7 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range
                 #TODO: why?
 
                 output_ranges.append(input_ranges[i])
+                doppleridx.append(input_doppler[i])
                 # determine whether doppler index corresponds to positive or negative velocity
                 # if d_Idx >= num_doppler_bins/2 then d_Idx = d_Idx - num_doppler_bins      --> negative velocity
                 # else d_Idx = d_Idx --> positive velocity
@@ -971,4 +983,4 @@ def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range
     xy_vec = np.array([x, y, doppler])
 
     # return phi, theta, ranges
-    return theta, ranges, xy_vec
+    return theta, ranges, doppleridx, xy_vec
