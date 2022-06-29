@@ -69,17 +69,59 @@ def aoa_music_1D_sv(rx_chirps, num_sources):
     if num_antennas < num_sources:
         raise ValueError("number of sources shoule not exceed number ")
 
-    R = cov_matrix(rx_chirps)
-    if R.shape[0] > 2:
-        R = aoa_spatial_smoothing(R, 2, False)
-
-    num_vec, steering_vec = gen_steering_vec(90,1,R.shape[0])
+    #R = cov_matrix(rx_chirps)
+    R = np.cov(np.outer(rx_chirps, rx_chirps.T), rowvar=0)
+    num_vec, steering_vec = gen_steering_vec(90,0.2,8)
 
     noise_subspace = _noise_subspace(R, num_sources)
     v = noise_subspace.T.conj() @ steering_vec.T
     spectrum = np.reciprocal(np.sum(v * v.conj(), axis=0).real)
 
     return spectrum
+
+
+def aoa_root_music_1D_sv(rx_chirps, num_sources):
+    """Implmentation of 1D root MUSIC algorithm on ULA (Uniformed Linear Array).
+
+    The root MUSIC follows the same equation as the original MUSIC, only to solve the equation instead of perform
+    matrix multiplication.
+    This implementations referred to the github.com/morriswmz/doatools.py
+
+    Args:
+        steering_vec (~np.ndarray): steering vector with the shape of (FoV/angel_resolution, num_ant).
+         FoV/angel_resolution is usually 181. It is generated from gen_steering_vec() function.
+        rx_chirps (~np.ndarray): Ouput of the 1D range FFT. The shape is (num_ant, num_chirps_per_frame).
+        num_sources (int): Number of sources in the scene. Needs to be smaller than num_ant for ULA.
+
+    Returns:
+        (~np.ndarray): the spectrum of the MUSIC. Objects should be holes for the equation and thus sharp peaks.
+    """
+    num_antennas = rx_chirps.shape[0]
+    #assert num_antennas == steering_vec.shape[1], "Mismatch between number of receivers in "
+    if num_antennas < num_sources:
+        raise ValueError("number of sources shoule not exceed number ")
+
+    R = np.cov(np.outer(rx_chirps, rx_chirps.T), rowvar=0)
+    num_vec, steering_vec = gen_steering_vec(90, 0.2, R.shape[0])
+    noise_subspace = _noise_subspace(R, num_sources)
+    v = noise_subspace @ noise_subspace.T.conj()
+    coeffs = np.zeros(num_antennas - 1, dtype=np.complex64)
+    for i in range(1, num_antennas):
+        coeffs[i - 1] += np.sum(np.diag(v, i))
+    coeffs = np.hstack((coeffs[::-1], np.sum(np.diag(v)), coeffs.conj()))
+
+    z = np.roots(coeffs)
+    #z = np.abs(z[z <= 1.0])
+    if len(z) < num_sources:
+        return None
+    z.sort()
+    z = z[-num_sources:]
+
+    # Assume to be half wavelength spacing
+    sin_vals = np.angle(z) / np.pi
+    locations = np.rad2deg(np.arcsin(sin_vals))
+
+    return locations
 
 def aoa_root_music_1D(steering_vec, rx_chirps, num_sources):
     """Implmentation of 1D root MUSIC algorithm on ULA (Uniformed Linear Array). 
@@ -177,8 +219,10 @@ def aoa_esprit(steering_vec, rx_chirps, num_sources, displacement):
     subarray2 = rx_chirps[displacement:]
     assert subarray1.shape == subarray2.shape, "separating subarrays encounters error."
 
-    R1 = cov_matrix(subarray1)
-    R2 = cov_matrix(subarray2)
+    R1 = np.cov(np.outer(subarray1, subarray1.T), rowvar=0)
+    R2 = np.cov(np.outer(subarray2, subarray2.T), rowvar=0)
+    #R1 = cov_matrix(subarray1)
+    #R2 = cov_matrix(subarray2)
     _, v1 = LA.eigh(R1)
     _, v2 = LA.eigh(R2)
     
@@ -188,7 +232,7 @@ def aoa_esprit(steering_vec, rx_chirps, num_sources, displacement):
     _, Ec = LA.eigh(C)
     Ec = Ec[::-1, :]
 
-    phi = -Ec[:num_antennas, num_antennas:] @ LA.inv(Ec[num_antennas:, num_antennas:])
+    phi = -Ec[:num_sources, num_sources:] @ LA.inv(Ec[num_sources:, num_sources:])
     w, _ = LA.eig(phi)
 
     sin_vals = np.angle(w) / np.pi

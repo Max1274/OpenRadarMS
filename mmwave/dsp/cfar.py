@@ -519,7 +519,7 @@ def os(x, *argv, **kwargs):
     return ret
 
 
-def os_ms(x, guard_len=0, noise_len=8, k=6, scale=1.0, axis=None):
+def os_ms_old(x, guard_len=0, noise_len=8, k=12, scale=1.0, axis=None):
     """Performs Ordered-Statistic CFAR (OS-CFAR) detection on the input array.
 
     Args:
@@ -555,10 +555,12 @@ def os_ms(x, guard_len=0, noise_len=8, k=6, scale=1.0, axis=None):
 
     if axis==0:
         n=shape[1]
-        #Initial CUT
-        left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
-        right_idx = list(np.arange(guard_len, guard_len + noise_len))
+
         for j in range(0, shape[0]):
+            # Initial CUT
+            left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
+            right_idx = list(np.arange(guard_len, guard_len + noise_len))
+
             cut_idx = -1
             while cut_idx < (n - 1):
                 cut_idx += 1
@@ -569,16 +571,17 @@ def os_ms(x, guard_len=0, noise_len=8, k=6, scale=1.0, axis=None):
                 right_idx.pop(0)
                 right_idx.append((cut_idx + guard_len + noise_len) % n)
 
-                window = np.concatenate((x[j][left_idx], x[j][right_idx]))
+                window = np.concatenate((x[j,left_idx], x[j,right_idx]))
                 window.partition(k)
-                noise_floor[j][cut_idx] = window[k]
+                noise_floor[j,cut_idx] = window[k]
 
     elif axis==1:
         n = shape[0]
-        # Initial CUT
-        left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
-        right_idx = list(np.arange(guard_len, guard_len + noise_len))
         for j in range(0, shape[1]):
+            # Initial CUT
+            left_idx = list(np.arange(n - noise_len - guard_len - 1, n - guard_len - 1))
+            right_idx = list(np.arange(guard_len, guard_len + noise_len))
+
             cut_idx = -1
             while cut_idx < (n - 1):
                 cut_idx += 1
@@ -589,9 +592,9 @@ def os_ms(x, guard_len=0, noise_len=8, k=6, scale=1.0, axis=None):
                 right_idx.pop(0)
                 right_idx.append((cut_idx + guard_len + noise_len) % n)
 
-                window = np.concatenate((x[left_idx][:,j], x[right_idx][:,j]))
+                window = np.concatenate((x[left_idx,j], x[right_idx,j]))
                 window.partition(k)
-                noise_floor[cut_idx][j] = window[k]
+                noise_floor[cut_idx,j] = window[k]
 
     return np.multiply(noise_floor, scale), noise_floor
 

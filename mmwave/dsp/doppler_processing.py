@@ -66,30 +66,31 @@ def separate_tx(signal, num_tx, vx_axis=1, axis=0):
 
     return out.transpose(reordering)
 
-def get_micro_doppler(aoa_input, numLoopsPerFrame):
+def get_micro_doppler(aoa_input, numLoopsPerFrame, peak_indices):
     md_mat = np.fft.fft(aoa_input, axis=1)
     md_mat = np.fft.fftshift(md_mat, axes=1)
     #md_mat = np.fft.fftshift(md_mat, axes=2)
     md_mat = np.abs(md_mat)
     md_mat = md_mat - np.min(md_mat)
-    md_max = np.max(md_mat)
+    #md_max = np.max(md_mat)
+    md_max = 1000000000
     doppler_var = np.zeros_like(md_mat)
     where = np.zeros_like(md_mat)
-    for k in range(md_mat.shape[2]):
+    for i, k in enumerate(peak_indices[:,1]):
         if  k < numLoopsPerFrame / 4:  # positives v_D, betragsmäßig aber kleiner als v_D_max/2
             indices = np.arange(0, int(k*2+1))
-            doppler_var[:, :, k] = np.sum(md_mat[:, :, indices], axis=2) / (md_max * indices.shape[0])
+            doppler_var[peak_indices[:,0][i], :, k] = np.sum(md_mat[peak_indices[:,0][i], :, indices], axis=0) / (md_max * indices.shape[0])
         elif k >= numLoopsPerFrame*3/4:    # negatives v_D, betragsmäßig aber kleiner als v_D_max/2
             indices = np.arange(int(numLoopsPerFrame-(numLoopsPerFrame-k)*2), numLoopsPerFrame)
             indices = np.append(indices, 0)
-            doppler_var[:, :, k] = np.sum(md_mat[:, :, indices], axis=2) / (md_max * indices.shape[0])
+            doppler_var[peak_indices[:,0][i], :, k] = np.sum(md_mat[peak_indices[:,0][i], :, indices], axis=0) / (md_max * indices.shape[0])
         elif k >= numLoopsPerFrame / 4 and k<numLoopsPerFrame/2:  # positives v_D, betragsmäßig größer als v_D_max/2
             indices = np.arange(0, int(numLoopsPerFrame / 2))
-            doppler_var[:, :, k] = np.sum(md_mat[:, :, indices], axis=2) / (md_max * indices.shape[0])
+            doppler_var[peak_indices[:,0][i], :, k] = np.sum(md_mat[peak_indices[:,0][i], :, indices], axis=0) / (md_max * indices.shape[0])
         elif k < numLoopsPerFrame * 3 / 4 and k>=numLoopsPerFrame/2:  # negatives v_D, betragsmäßig größer als v_D_max/2
             indices = np.arange(int(numLoopsPerFrame/2), numLoopsPerFrame)
             indices = np.append(indices, 0)
-            doppler_var[:, :, k] = np.sum(md_mat[:, :, indices], axis=2) / (md_max * indices.shape[0])
+            doppler_var[peak_indices[:,0][i], :, k] = np.sum(md_mat[peak_indices[:,0][i], :, indices], axis=0) / (md_max * indices.shape[0])
 
     return doppler_var
 

@@ -151,7 +151,7 @@ def radar_dbscan_ms(det_obj_2d, weight, doppler_resolution):
         (obj1[1] - obj2[1]) ** 2 + \
         weight * ((obj1[2] - obj2[2])) ** 2
 
-    labels = DBSCAN(eps=3, min_samples=7, metric=custom_distance).fit_predict(X)
+    labels = DBSCAN(eps=5, min_samples=7, metric=custom_distance).fit_predict(X)
     det_obj_2d['cluster'] = labels
     unique_labels = sorted(
         set(labels[labels >= 0]))  # Exclude the points clustered as noise, i.e, with negative labels.
@@ -164,7 +164,7 @@ def radar_dbscan_ms(det_obj_2d, weight, doppler_resolution):
         clusters['center'][label] = np.mean(X[label == labels, 0:1], axis=0)[:2]
         clusters['size'][label] = np.amax(X[label == labels, 0:1], axis=0)[:2] - \
                                   np.amin(X[label == labels, 0:1], axis=0)[:2]
-        clusters['avgVelocity'][label] = np.mean(X[:, 2], axis=0)
+        clusters['avgVelocity'][label] = np.mean(X[label == labels][:, 2], axis=0)
 
     return clusters
 

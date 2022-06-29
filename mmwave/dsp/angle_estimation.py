@@ -244,7 +244,7 @@ def aoa_capon(x, steering_vector, magnitude=False):
     Rxx = forward_backward_avg(Rxx)
     Rxx_inv = np.linalg.pinv(Rxx)
     # Calculate Covariance Matrix Rxx
-    first = Rxx_inv @ steering_vector.T
+    first = Rxx_inv * steering_vector.T
     den = np.reciprocal(np.einsum('ij,ij->i', steering_vector.conj(), first.T))
     weights = np.matmul(first, den)
 
@@ -396,7 +396,7 @@ def peak_search_full(doa_spectrum, gamma=1.0, peak_threshold_weight=0.2511886431
     return num_max, ang_est
 
 
-def peak_search_full_variance(doa_spectrum, steering_vec_size, sidelobe_level=0.251188643150958, gamma=1.0):
+def peak_search_full_variance(doa_spectrum, steering_vec_size, sidelobe_level=0.99, gamma=1.0):
     """ Performs peak search (TI's full search) will retaining details about each peak including
     each peak's width, location, and value.
 
