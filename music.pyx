@@ -19,7 +19,7 @@ def music_cyth(numpy.ndarray[DTYPE_t, ndim=1] rx_chirps, int num_sources):
             real = np.cos(mag)
             imag = np.sin(mag)
 
-            steering_vectors[kk, jj] = np.complex(real, imag)
+            steering_vectors[kk, jj] = complex(real, imag)
 
     _, v = LA.eigh(R)
     noise_subspace = v[:, :-num_sources]

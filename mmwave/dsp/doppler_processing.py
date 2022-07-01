@@ -72,7 +72,7 @@ def get_micro_doppler(aoa_input, numLoopsPerFrame, peak_indices):
     #md_mat = np.fft.fftshift(md_mat, axes=2)
     md_mat = np.abs(md_mat)
     md_mat = md_mat - np.min(md_mat)
-    #md_max = np.max(md_mat)
+    md_max = np.max(md_mat)
     md_max = 1000000000
     doppler_var = np.zeros_like(md_mat)
     where = np.zeros_like(md_mat)

@@ -2,6 +2,7 @@ import time
 import numpy as np
 import mmwave.dsp as dsp
 import matplotlib.pyplot as plt
+import mmwave.clustering as clu
 from matplotlib import cm
 from matplotlib import animation
 from mmwave.dsp.utils import Window
@@ -18,7 +19,7 @@ plt.close('all')
 
 # QOL settings
 loadData = True
-datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\leicht_schraeg\\"
+datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\90grad\\"
 
 numFrames = 900
 numADCSamples = 256
@@ -40,8 +41,9 @@ max_doppler = 7
 print("range resolution: " + str(range_resolution))
 print("doppler resolution: " + str(doppler_resolution))
 
-plot2DXYdoppler = True
+plot2DXYdoppler = False
 plotmusic = False
+plotFelgen = True
 saveVideo = True
 
 
@@ -63,6 +65,8 @@ def main():
     if plot2DXYdoppler:
         fig, axes = plt.subplots(1, 2)
     elif plotmusic:
+        fig, axes = plt.subplots(1, 2)
+    elif plotFelgen:
         fig, axes = plt.subplots(1, 2)
 
     for i, frame in enumerate(adc_data[50:400]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
@@ -98,7 +102,7 @@ def main():
         det_peaks_indices = np.argwhere(full_mask == True)
 
         # evaluate doppler variance for Micro-Doppler-recognition of wheels
-        doppler_var = dsp.get_micro_doppler(aoa_input, numLoopsPerFrame,det_peaks_indices )
+        doppler_var = dsp.get_micro_doppler(aoa_input, numLoopsPerFrame,det_peaks_indices)
         doppler_var_sum_angle = np.sum(doppler_var, axis=1)
 
         # peakVals and SNR calculation
@@ -125,7 +129,7 @@ def main():
             #music_spectrum = dsp.aoa_music_1D_sv(music_input, 1)
             music_spectrum = music_cyth(music_input,1)
             peak_bin = music_spectrum.argmax()
-            Refl[refs+n_insertions]['azimuth'] = -(peak_bin*0.2 - 90)
+            Refl[refs+n_insertions]['azimuth'] = -(peak_bin*0.2 - 90)       # 0.2: Auflösung steering_vector, 90 Grad, um Bereich -90 ... 90 abzudecken
 
             # adjust dopplerIdx to take negative values into account
             if Refl[refs]['dopplerIdx'] >= numLoopsPerFrame / 2:
@@ -142,6 +146,21 @@ def main():
         detObj2D['azimuth'] = Refl['azimuth']
         detObj2D['doppler'] = Refl['dopplerIdx'] * doppler_resolution
         detObj2D['variance_D'] = Refl['variance_D']
+
+        if len(detObj2D) > 0:
+            cluster = clu.radar_dbscan_ms(detObj2D, 4, doppler_resolution)
+            Felgenpunkte = detObj2D      #noise_free
+            for j in reversed(range(numDetObjs)):
+                delete = False
+                if Felgenpunkte['cluster'][j] == -1:
+                    delete = True
+                elif cluster['size'][Felgenpunkte['cluster'][j]][1] < 1:
+                    delete = True
+                if Felgenpunkte['variance_D'][j]<0.25:      #0.25; 0.4
+                    delete = True
+                if delete == True:
+                    Felgenpunkte = np.delete(Felgenpunkte, j, axis=0)
+
 
         if plotmusic:
             ann0 = axes[0].annotate(f"XY scatter " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
@@ -175,7 +194,7 @@ def main():
                 p = [p0, p1, ann0, ann1]
                 ims.append(p)
 
-        if plot2DXYdoppler:
+        elif plot2DXYdoppler:
             ann0 = axes[0].annotate(f"XY scatter " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
             ann1 = axes[1].annotate(f"velocity profile " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
 
@@ -207,13 +226,45 @@ def main():
                 p = [p0, p1, ann0, ann1]
                 ims.append(p)
 
+        elif plotFelgen:
+            ann0 = axes[0].annotate(f"XY scatter " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
+            ann1 = axes[1].annotate(f"extracted wheels " + str(i), (0.5, 1.03), xycoords="axes fraction", ha="center")
+
+            axes[0].set_ylim(bottom=0, top=max_range)
+            axes[0].set_ylabel('x-range [m]')
+            axes[0].set_xlim(left=-10, right=10)
+            axes[0].set_xlabel('y-range [m]')
+            axes[0].grid(visible=True)
+
+            axes[1].set_ylim(bottom=0, top=max_range)
+            axes[1].set_ylabel('x-range [m]')
+            axes[1].set_xlim(left=-10, right=10)
+            axes[1].set_xlabel('y-range [m]')
+            axes[1].grid(visible=True)
+
+            if not saveVideo:
+                p0 = axes[0].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['doppler'],
+                                     vmin=-max_doppler, vmax=max_doppler, marker='o', s=20, cmap=cm.jet)
+                p1 = axes[1].scatter(Felgenpunkte['location_x'], Felgenpunkte['location_y'], marker='o', s=20)
+                cb = plt.colorbar(p0, ax=axes[0])
+                plt.pause(0.1)
+                axes[0].clear()
+                axes[1].clear()
+                cb.remove()
+            else:
+                p0 = axes[0].scatter(detObj2D['location_x'], detObj2D['location_y'], c=detObj2D['doppler'],
+                                     vmin=-max_doppler, vmax=max_doppler, marker='o', s=2, cmap=cm.jet)
+                p1 = axes[1].scatter(Felgenpunkte['location_x'], Felgenpunkte['location_y'], marker='o', s=2, c='#1f77b4')
+                p = [p0, p1, ann0, ann1]
+                ims.append(p)
+
         end = time.time()
         print("execution time " + str(i) + ": " + str(end - start_all))
 
     if saveVideo:
         cb = fig.colorbar(p0, ax=axes[0])
         ani = animation.ArtistAnimation(fig, ims, repeat=False, blit=True)
-        ani.save(datapath + 'auswertung_MUSIC_06_29dopplervariance.mp4', dpi=200, fps=1 / 0.035)
+        ani.save(datapath + 'auswertung_MUSIC_07_01Felgenpunkte.mp4', dpi=200, fps=1 / 0.035)
 
     print("TOTAL time " + str(i) + ": " + str(time.time() - start_whole))
 
