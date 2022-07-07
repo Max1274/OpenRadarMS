@@ -10,7 +10,8 @@ from matplotlib import animation
 from mmwave.dsp.utils import Window
 from mmwave.dataloader.adc import DCA1000
 import gc
-from oscfar import os_ms
+from oscfar import os_cyth
+from music import music_cyth
 
 
 gc.disable()
@@ -20,7 +21,7 @@ plt.close('all')
 
 # QOL settings
 loadData = True
-datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\gerade_vor\\"
+datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\leicht_schraeg\\"
 
 numFrames = 900
 numADCSamples = 256
@@ -46,7 +47,7 @@ plotRangeDopp = False
 plot2DXYdoppler = False
 plot2DXYClusters = True
 plotmusic = False
-saveVideo = False
+saveVideo = True
 
 
 def main():
@@ -90,8 +91,8 @@ def main():
         fft2d_sum = det_matrix.astype(np.int64)
 
         startOS = time.time()
-        thresholdRange, noiseFloorRange = os_ms(fft2d_sum, guard_len=4, noise_len=10, scale=1.05, axis=1)
-        #thresholdDoppler, noiseFloorDoppler = os_ms(fft2d_sum, guard_len=4, noise_len=20, scale=1.05, axis=0)
+        thresholdRange, noiseFloorRange = os_cyth(fft2d_sum, guard_len=4, noise_len=10, scale=1.05, axis=1)
+        #thresholdDoppler, noiseFloorDoppler = os_cyth(fft2d_sum, guard_len=4, noise_len=20, scale=1.05, axis=0)
         print("OS time: " + str(time.time()-startOS))
         det_doppler_mask = (fft2d_sum > 0)
         det_range_mask = (fft2d_sum > thresholdRange)
@@ -115,6 +116,7 @@ def main():
         detRefl['dopplerIdx'] = det_peaks_indices[:, 1].squeeze()
 
         azimuthInput = aoa_input[detRefl['rangeIdx'], :, detRefl['dopplerIdx']]
+
 
         Theta, Ranges, dopplerIdx, xydoppVec = dsp.beamforming_naive_mixed_xy(azimuthInput, detRefl['rangeIdx'],
                                                                               detRefl['dopplerIdx'],
@@ -140,7 +142,7 @@ def main():
                 delete = False
                 if detObj2D_nf['cluster'][j] == -1:
                     delete = True
-                elif np.abs(cluster['avgVelocity'][detObj2D_nf['cluster'][j]]*0.4) < np.abs(detObj2D_nf['doppler'][j]) < np.abs(cluster['avgVelocity'][detObj2D_nf['cluster'][j]]*1.7):
+                elif np.abs(cluster['avgVelocity'][detObj2D_nf['cluster'][j]]*0.2) < np.abs(detObj2D_nf['doppler'][j]) < np.abs(cluster['avgVelocity'][detObj2D_nf['cluster'][j]]*1.8):
                     delete = True
                 if delete == True:
                     detObj2D_nf = np.delete(detObj2D_nf, j, axis=0)
@@ -259,7 +261,7 @@ def main():
     if saveVideo:
         cb = fig.colorbar(p0, ax=axes[0])
         ani = animation.ArtistAnimation(fig, ims, repeat=False, blit=True)
-        ani.save(datapath + r'konzept2\\auswertung_scale_1_05CFARausgelagert.mp4', dpi=200, fps=1 / 0.035)
+        ani.save(datapath + r'konzept2\\auswertung_scale_1_05Zwischenpräsentation.mp4', dpi=200, fps=1 / 0.035)
 
 
 if __name__ == '__main__':

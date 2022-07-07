@@ -19,7 +19,7 @@ plt.close('all')
 
 # QOL settings
 loadData = True
-datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\90grad\\"
+datapath = r"D:\\03_Inbetriebnahme DCA\\DUMP\\leicht_schraeg\\"
 
 numFrames = 900
 numADCSamples = 256
@@ -46,6 +46,8 @@ plotmusic = False
 plotFelgen = True
 saveVideo = True
 
+useMUSIC = True
+
 
 def main():
     ims = []
@@ -69,7 +71,7 @@ def main():
     elif plotFelgen:
         fig, axes = plt.subplots(1, 2)
 
-    for i, frame in enumerate(adc_data[50:400]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
+    for i, frame in enumerate(adc_data[50:500]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
         #        print(i,end=',') # Frame tracker
         # (2) Range Processing
         start_all = time.time()
@@ -91,10 +93,10 @@ def main():
 
         start = time.time()
         thresholdRange, noiseFloorRange = os_cyth(fft2d_sum, guard_len=4, noise_len=10, scale=1.05, axis=1)
-        thresholdDoppler, noiseFloorDoppler = os_cyth(fft2d_sum, guard_len=4, noise_len=20, scale=1.05, axis=0)
+        #thresholdDoppler, noiseFloorDoppler = os_cyth(fft2d_sum, guard_len=4, noise_len=20, scale=1.05, axis=0)
         print("CFAR time: " + str(time.time() - start))
 
-        det_doppler_mask = (fft2d_sum > thresholdDoppler)
+        det_doppler_mask = (fft2d_sum > 0)
         det_range_mask = (fft2d_sum > thresholdRange)
 
         # Get indices of detected peaks
@@ -102,7 +104,7 @@ def main():
         det_peaks_indices = np.argwhere(full_mask == True)
 
         # evaluate doppler variance for Micro-Doppler-recognition of wheels
-        doppler_var = dsp.get_micro_doppler(aoa_input, numLoopsPerFrame,det_peaks_indices)
+        doppler_var = dsp.get_micro_doppler(aoa_input, numLoopsPerFrame, det_peaks_indices)
         doppler_var_sum_angle = np.sum(doppler_var, axis=1)
 
         # peakVals and SNR calculation
@@ -123,17 +125,20 @@ def main():
         n_insertions = 0
         numnDets = detRefl.shape[0]
 
-        for refs in range(numnDets):
-            #MUSIC
-            music_input = music_cube[detRefl[refs]['rangeIdx'], :, detRefl[refs]['dopplerIdx']]
-            #music_spectrum = dsp.aoa_music_1D_sv(music_input, 1)
-            music_spectrum = music_cyth(music_input,1)
-            peak_bin = music_spectrum.argmax()
-            Refl[refs+n_insertions]['azimuth'] = -(peak_bin*0.2 - 90)       # 0.2: Auflösung steering_vector, 90 Grad, um Bereich -90 ... 90 abzudecken
+        if useMUSIC:
+            for refs in range(numnDets):
+                #MUSIC
+                music_input = music_cube[detRefl[refs]['rangeIdx'], :, detRefl[refs]['dopplerIdx']]
+                #music_spectrum = dsp.aoa_music_1D_sv(music_input, 1)
+                music_spectrum = music_cyth(music_input,1)
+                peak_bin = music_spectrum.argmax()
+                Refl[refs+n_insertions]['azimuth'] = -(peak_bin*0.2 - 90)       # 0.2: Auflösung steering_vector, 90 Grad, um Bereich -90 ... 90 abzudecken
 
             # adjust dopplerIdx to take negative values into account
             if Refl[refs]['dopplerIdx'] >= numLoopsPerFrame / 2:
                 Refl[refs]['dopplerIdx'] = Refl[refs]['dopplerIdx'] - numLoopsPerFrame
+        else:
+
 
         print("MUSIC time: " + str(time.time() - start))
         numDetObjs = Refl.shape[0]
@@ -264,7 +269,7 @@ def main():
     if saveVideo:
         cb = fig.colorbar(p0, ax=axes[0])
         ani = animation.ArtistAnimation(fig, ims, repeat=False, blit=True)
-        ani.save(datapath + 'auswertung_MUSIC_07_01Felgenpunkte.mp4', dpi=200, fps=1 / 0.035)
+        ani.save(datapath + 'auswertung_MUSIC_07_06Felgenpunkte.mp4', dpi=200, fps=1 / 0.035)
 
     print("TOTAL time " + str(i) + ": " + str(time.time() - start_whole))
 
