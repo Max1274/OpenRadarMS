@@ -14,6 +14,7 @@ import numpy as np
 import mmwave.dsp as dsp
 import mmwave.clustering as clu
 from mmwave.dataloader import DCA1000
+from mmwave.dataloader import CMD
 
 import matplotlib.pyplot as plt
 
@@ -69,6 +70,11 @@ if __name__ == '__main__':
         print("Using Custom Plotting")
 
     frameCounter = 0
+    resp = dca._send_command(CMD.RECORD_STOP_CMD_CODE)      #resets byte-counter
+    resp = dca._send_command(CMD.RECORD_START_CMD_CODE)
+
+    #input("Please start Radar from mmWave Studio using Trigger Frame. Then press ENTER.")
+    #print("ENTER successfully pressed!")
 
     while True:
         # (1) Reading in adc data
@@ -97,6 +103,7 @@ if __name__ == '__main__':
             plt.pause(0.05)
             plt.clf()
             plt.title("Live Range-Doppler-Map frame: " + str(frameCounter))
+            continue
 
         # (4) Object Detection
         # --- CFAR, SNR is calculated as well.

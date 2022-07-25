@@ -155,7 +155,7 @@ class DCA1000:
         self.data_socket.close()
         self.config_socket.close()
 
-    def read(self, timeout=1):
+    def read(self, timeout=5):
         """ Read in a single packet via UDP
 
         Args:
@@ -197,7 +197,7 @@ class DCA1000:
             if packets_read > PACKETS_IN_FRAME_CLIPPED:
                 packets_read = 0
 
-    def _send_command(self, cmd, length='0000', body='', timeout=1):
+    def _send_command(self, cmd=CMD.RECORD_START_CMD_CODE, length='0000', body='', timeout=1):
         """Helper function to send a single commmand to the FPGA
 
         Args:
