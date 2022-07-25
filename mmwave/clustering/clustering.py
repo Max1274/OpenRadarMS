@@ -124,7 +124,7 @@ def radar_dbscan(det_obj_2d, weight, doppler_resolution, use_elevation=False):
 
     return clusters
 
-def radar_dbscan_ms(det_obj_2d, weight, doppler_resolution):
+def radar_dbscan_ms(det_obj_2d, weight, eps, min_samples):
     """DBSCAN for point cloud. Directly call the scikit-learn.dbscan with customized distance metric.
 
     DBSCAN algorithm for clustering generated point cloud. It directly calls the dbscan from scikit-learn but with
@@ -151,20 +151,22 @@ def radar_dbscan_ms(det_obj_2d, weight, doppler_resolution):
         (obj1[1] - obj2[1]) ** 2 + \
         weight * ((obj1[2] - obj2[2])) ** 2
 
-    labels = DBSCAN(eps=2, min_samples=7, metric=custom_distance).fit_predict(X)
+    labels = DBSCAN(eps=eps, min_samples=min_samples, metric=custom_distance).fit_predict(X)
     det_obj_2d['cluster'] = labels
     unique_labels = sorted(
         set(labels[labels >= 0]))  # Exclude the points clustered as noise, i.e, with negative labels.
     dtype_location = '(2,)<f4'
     dtype_clusters = np.dtype({'names': ['num_points', 'center', 'size', 'avgVelocity'],
-                               'formats': ['<u4', dtype_location, dtype_location, '<f4']})
+                               'formats': ['<u4', dtype_location, '<f4', '<f4']})
     clusters = np.zeros(len(unique_labels), dtype=dtype_clusters)
     for label in unique_labels:
         clusters['num_points'][label] = X[label == labels].shape[0]
-        clusters['center'][label] = np.mean(X[label == labels, 0:1], axis=0)[:2]
-        clusters['size'][label] = np.amax(X[label == labels, 0:1], axis=0)[:2] - \
-                                  np.amin(X[label == labels, 0:1], axis=0)[:2]
-        clusters['avgVelocity'][label] = np.mean(X[label == labels][:, 2], axis=0)
+        clusters['center'][label] = np.mean(X[label == labels, 0:2], axis=0)[:2]
+        clusters['size'][label] = ((np.amax(X[label == labels, 0:2], axis=0)[:2] - \
+                                  np.amin(X[label == labels, 0:2], axis=0)[:2])[0]) * \
+                                  ((np.amax(X[label == labels, 0:2], axis=0)[:2] - \
+                                  np.amin(X[label == labels, 0:2], axis=0)[:2])[1])
+        clusters['avgVelocity'][label] = np.mean(X[label == labels, 2], axis=0)
 
     return clusters
 

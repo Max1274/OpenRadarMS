@@ -200,6 +200,36 @@ def aoa_bartlett(steering_vec, sig_in, axis):
     doa_spectrum = np.abs(y) ** 2
     return doa_spectrum.swapaxes(axis, np.arange(len(sig_in.shape))[-2])
 
+def aoa_bartlett_ms(steering_vec, sig_in, axis):
+    """Perform AOA estimation using Bartlett Beamforming on a given input signal (sig_in). Make sure to specify the correct axis in (axis)
+    to ensure correct matrix multiplication. The power spectrum is calculated using the following equation:
+
+    .. math::
+        P_{ca} (\\theta) = a^{H}(\\theta) R_{xx}^{-1} a(\\theta)
+
+    This steers the beam using the steering vector as weights:
+
+    .. math::
+        w_{ca} (\\theta) = a(\\theta)
+
+    Args:
+        steering_vec (ndarray): A 2D-array of size (numTheta, num_ant) generated from gen_steering_vec
+        sig_in (ndarray): Either a 2D-array or 3D-array of size (num_ant, numChirps) or (numChirps, num_vrx, num_adc_samples) respectively, containing ADC sample data sliced as described
+        axis (int): Specifies the axis where the Vrx data in contained.
+
+    Returns:
+        doa_spectrum (ndarray): A 3D-array of size (numChirps, numThetas, numSamples)
+
+    Example:
+        >>> # In this example, dataIn is the input data organized as numFrames by RDC
+        >>> frame = 0
+        >>> dataIn = np.random.rand((num_frames, num_chirps, num_vrx, num_adc_samples))
+        >>> aoa_bartlett(steering_vec,dataIn[frame],axis=1)
+    """
+    y = np.matmul(np.conjugate(steering_vec), sig_in)
+    doa_spectrum = np.abs(y) ** 2
+    return doa_spectrum
+
 
 def aoa_capon(x, steering_vector, magnitude=False):
     """Perform AOA estimation using Capon (MVDR) Beamforming on a rx by chirp slice
@@ -868,14 +898,6 @@ def naive_xy(virtual_ant, num_tx=2, num_rx=4, fft_size=64):
     y_vector = np.cos(wx)
 
     return x_vector, y_vector
-
-def music_analysis(fft1d_out, est_range=90, num_vrx=8, est_resolution=1):
-    steering_vector = gen_steering_vec(est_range, est_resolution, num_vrx)
-    radar_cube = doppler_processing.separate_tx(fft1d_out, 2, vx_axis=1, axis=0)
-    radar_cube = np.transpose(radar_cube, axes=(2, 1, 0))
-    num_vec, steering_vector = gen_steering_vec(90, 1, 8)
-    music_spectrum = aoa_music_1D(steering_vector, radar_cube[0, :, :], 7)
-
 
 
 def beamforming_naive_mixed_xy(azimuth_input, input_ranges, input_doppler, range_resolution, doppler_resolution, numloopsperframe, method='Bartlett', num_vrx=8, est_range=90,

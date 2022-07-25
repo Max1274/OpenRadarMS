@@ -32,7 +32,7 @@ numADCSamples = numADCSamplesOriginal * numADCSampleMultiplier
 numTxAntennas = 2
 numRxAntennas = 4
 numLoopsPerFrame = 64
-numChirpsPerFrame = numTxAntennas * numLoopsPerFrame
+numChirpsPerFrame = numLoopsPerFrame
 
 numRangeBins = numADCSamples
 numDopplerBins = numLoopsPerFrame
@@ -46,8 +46,8 @@ print("doppler resoltion: " + str(doppler_resolution))
 print("max range: " + str(max_range))
 print("max doppler: " + str(max_doppler))
 
-plotRangeDopp = False
-plot2DscatterXY = True
+plotRangeDopp = True
+plot2DscatterXY = False
 plotCustomPlt = False
 
 visTrigger = plot2DscatterXY + plotRangeDopp + plotCustomPlt

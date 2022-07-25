@@ -3,7 +3,7 @@ cimport numpy
 cimport cython
 
 
-ctypedef numpy.int64_t DTYPE_t
+ctypedef numpy.int16_t DTYPE_t
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 def os_cyth(numpy.ndarray[DTYPE_t, ndim=2] x, guard_len=0, noise_len=8, k=12, scale=1.0, axis=None):

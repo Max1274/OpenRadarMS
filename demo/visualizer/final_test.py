@@ -46,7 +46,7 @@ print("doppler resolution: " + str(doppler_resolution))
 plot2DXYdoppler = False
 plotmusic = False
 plotFelgen = True
-saveVideo = True
+saveVideo = False
 
 useMUSIC = True
 
@@ -73,7 +73,7 @@ def main():
     elif plotFelgen:
         fig, axes = plt.subplots(1, 2)
 
-    num_vec, steering_vec = dsp.gen_steering_vec(90, 1, 8)
+    num_vec, steering_vec = dsp.gen_steering_vec(90, 0.5, 8)
 
     for i, frame in enumerate(adc_data[50:500]):  # leicht_schraeg:50, gerade_vor:120, 90grad:50
         #        print(i,end=',') # Frame tracker
@@ -88,8 +88,8 @@ def main():
         det_matrix, aoa_input = dsp.doppler_processing(radar_cube, num_tx_antennas=2, clutter_removal_enabled=False,
                                                        window_type_2d=Window.HAMMING)
 
-        music_cube = dsp.separate_tx(radar_cube, 2, vx_axis=1, axis=0)
-        music_cube = np.transpose(music_cube, axes=(2, 1, 0))
+        '''music_cube = dsp.separate_tx(radar_cube, 2, vx_axis=1, axis=0)
+        music_cube = np.transpose(music_cube, axes=(2, 1, 0))'''
 
         # (4) Detection of Reflections
         # --- CFAR, SNR is calculated as well.
@@ -125,6 +125,10 @@ def main():
         detRefl['peakVal'] = peakVals.flatten()
         detRefl['variance_D'] = doppler_var_sum_angle[detRefl['rangeIdx'], detRefl['dopplerIdx']]
 
+        #min. 0.5m Abstand
+        detRefl = detRefl[detRefl['rangeIdx']>(0.5/range_resolution)]
+
+
         Refl = detRefl
         start = time.time()
         n_insertions = 0
@@ -132,14 +136,14 @@ def main():
 
         for refs in range(numnDets):
             # MUSIC
-            aoa_input2 = aoa_input[detRefl[refs]['rangeIdx'], :, detRefl[refs]['dopplerIdx']]
+            aoa_vector = aoa_input[detRefl[refs]['rangeIdx'], :, detRefl[refs]['dopplerIdx']]
             if useMUSIC:
-                aoa_spectrum = music_cyth(aoa_input2, steering_vec, 1)
+                aoa_spectrum = music_cyth(aoa_vector, steering_vec, 1)
             else:
-                aoa_spectrum = dsp.aoa_bartlett_ms(steering_vec, aoa_input2, 0)
+                aoa_spectrum = dsp.aoa_bartlett_ms(steering_vec, aoa_vector, 0)
             peak_bin = aoa_spectrum.argmax()
             Refl[refs + n_insertions]['azimuth'] = -(
-                    peak_bin * 1 - 90)  # 0.2: Auflösung steering_vector, 90 Grad, um Bereich -90 ... 90 abzudecken
+                    peak_bin * 0.5 - 90)  # 0.5: Auflösung steering_vector, 90 Grad, um Bereich -90° ... 90° abzudecken
 
             # adjust dopplerIdx to take negative values into account
             if Refl[refs]['dopplerIdx'] >= numLoopsPerFrame / 2:

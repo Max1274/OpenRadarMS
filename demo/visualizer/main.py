@@ -208,8 +208,8 @@ if __name__ == '__main__':
         SNRThresholds2 = np.array([[2, 21], [10, 11], [35, 14]])
         peakValThresholds2 = np.array([[1, 100], [0.5, 400], [500, 0]])
 
-        # detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
-        # range_resolution)
+        detObj2D = dsp.range_based_pruning(detObj2D, SNRThresholds2, peakValThresholds2, numRangeBins, 0.5,
+        range_resolution)
 
         azimuthInput = aoa_input[detObj2DRaw['rangeIdx'], :, detObj2DRaw['dopplerIdx']]
 
